@@ -1,0 +1,35 @@
+name: daiko
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: file:/app/data/daiko.db
+      PARCELHUB_URL: http://parcelhub-server-1:3001
+      DAIKO_ADMIN_EMAILS: ${DAIKO_ADMIN_EMAILS:?Set DAIKO_ADMIN_EMAILS in .env}
+      DAIKO_ALLOWED_ORIGINS: https://parcelhub.nekoj.in
+      HOST: 0.0.0.0
+      PORT: "3002"
+    volumes:
+      - daiko-data:/app/data
+    networks:
+      default:
+        aliases: [daiko-api]
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.client
+    restart: unless-stopped
+    depends_on: [api]
+    networks:
+      default:
+        aliases: [daiko-web]
+volumes:
+  daiko-data:
+networks:
+  default:
+    external: true
+    name: parcelhub_default
+

@@ -1,0 +1,4 @@
+services:
+  client:
+    volumes:
+      - /root/Daiko/deploy/parcelhub-nginx.conf:/etc/nginx/conf.d/default.conf:ro

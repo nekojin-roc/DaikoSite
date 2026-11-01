@@ -1,0 +1,40 @@
+# Isolated staging database; shares ParcelHub identity service but no data volume
+# with production Daiko. Cloudflare Tunnel should target 127.0.0.1:3334.
+name: daiko-staging
+services:
+  staging-api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: file:/app/data/daiko.db
+      PARCELHUB_URL: http://parcelhub-server-1:3001
+      DAIKO_ADMIN_EMAILS: ${DAIKO_ADMIN_EMAILS:?Set DAIKO_ADMIN_EMAILS in a private env file}
+      DAIKO_ALLOWED_ORIGINS: https://daiko.nekoj.in
+      HOST: 0.0.0.0
+      PORT: "3002"
+    volumes:
+      - staging-data:/app/data
+    networks:
+      default:
+        aliases: [daiko-staging-api]
+  staging-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.client
+    restart: unless-stopped
+    depends_on: [staging-api]
+    ports:
+      - "127.0.0.1:3334:80"
+    volumes:
+      - ./deploy/staging-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      default: {}
+volumes:
+  staging-data:
+networks:
+  default:
+    external: true
+    name: parcelhub_default
+
