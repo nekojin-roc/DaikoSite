@@ -42,8 +42,8 @@ test('authorized workflows, validation, ordering and persistence', async () => {
     assert.equal((await call('POST', route, 'sid=other', { type: 'GOODS', message: 'a towel' })).statusCode, 201);
     assert.equal((await call('GET', route, 'sid=user')).statusCode, 403);
     const queue = (await call('GET', route, 'sid=admin')).json().requests;
-    assert.deepEqual(queue.map(item => item.message), ['hello', 'a towel']);
-    assert.deepEqual(queue.map(item => item.user.email), ['fan@example.com', 'other@example.com']);
+    assert.deepEqual(queue.map(item => item.message), ['a towel', 'hello']);
+    assert.deepEqual(queue.map(item => item.user.email), ['other@example.com', 'fan@example.com']);
     const mine = (await call('GET', '/api/my-requests', 'sid=user')).json().requests;
     assert.equal(mine.length, 1);
     assert.equal(mine[0].event.name, 'Live');

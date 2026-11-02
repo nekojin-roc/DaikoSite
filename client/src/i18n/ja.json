@@ -33,6 +33,7 @@
   "The queue is empty": "リクエストはありません",
   "Requests for this event will appear here as they come in.": "このイベントへのリクエストがここに表示されます。",
   "Welcome to Daiko": "Daikoへようこそ",
+  "Login": "ログイン",
   "Email": "メールアドレス",
   "Password": "パスワード",
   "Enter your password": "パスワードを入力",
@@ -187,5 +188,14 @@
   "Group not found": "グループが見つかりません",
   "Member not found": "メンバーが見つかりません",
   "Offering not found": "代行メニューが見つかりません",
-  "Select a valid member and offering for this event": "このイベントに有効なメンバーと代行メニューを選択してください"
+  "Select a valid member and offering for this event": "このイベントに有効なメンバーと代行メニューを選択してください",
+  "Delete event": "イベントを削除",
+  "Event deleted successfully.": "イベントを削除しました。",
+  "Finish": "完了",
+  "Finishing…": "完了処理中…",
+  "Finished": "完了済み",
+  "Request finished.": "リクエストを完了しました。",
+  "Request type": "リクエストの種類",
+  "Member request": "メンバーへのリクエスト",
+  "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "「{{name}}」を削除しますか？表示中のリクエスト数：{{shownCount}}件。このイベントのすべてのリクエストも完全に削除されます。この操作は取り消せません。"
 }

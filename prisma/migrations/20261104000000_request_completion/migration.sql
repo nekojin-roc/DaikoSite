@@ -1,0 +1,1 @@
+ALTER TABLE "Request" ADD COLUMN "finishedAt" DATETIME;

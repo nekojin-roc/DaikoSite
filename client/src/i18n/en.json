@@ -33,6 +33,7 @@
   "The queue is empty": "The queue is empty",
   "Requests for this event will appear here as they come in.": "Requests for this event will appear here as they come in.",
   "Welcome to Daiko": "Welcome to Daiko",
+  "Login": "Login",
   "Email": "Email",
   "Password": "Password",
   "Enter your password": "Enter your password",
@@ -187,5 +188,14 @@
   "Group not found": "Group not found",
   "Member not found": "Member not found",
   "Offering not found": "Offering not found",
-  "Select a valid member and offering for this event": "Select a valid member and offering for this event"
+  "Select a valid member and offering for this event": "Select a valid member and offering for this event",
+  "Delete event": "Delete event",
+  "Event deleted successfully.": "Event deleted successfully.",
+  "Finish": "Finish",
+  "Finishing…": "Finishing…",
+  "Finished": "Finished",
+  "Request finished.": "Request finished.",
+  "Request type": "Request type",
+  "Member request": "Member request",
+  "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone."
 }

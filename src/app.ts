@@ -22,12 +22,12 @@ const requestInput = z.discriminatedUnion("type", [
 ]);
 const customRequestInput = z.object({ memberId: z.string().min(1), offeringId: z.string().min(1), amount: z.number().int().min(1).max(1000).nullable().optional(), message: z.string().trim().min(1).max(5000), image: z.object({ mimeType: z.string(), data: z.string() }).strict().optional() }).strict();
 const nameInput = z.object({ name: z.string().trim().min(1).max(200) }).strict();
-const eventSelect = { id: true, name: true, groupName: true, groupId: true, startsAt: true, imageUrl: true, _count: { select: { requests: true } } } as const;
+const eventSelect = { id: true, name: true, groupName: true, groupId: true, startsAt: true, imageUrl: true, _count: { select: { requests: { where: { finishedAt: null } } } } } as const;
 function eventView(event: { id: string; name: string; groupName: string; groupId: string | null; startsAt: Date; imageUrl: string | null; _count: { requests: number } }) {
   return { id: event.id, name: event.name, groupName: event.groupName, groupId: event.groupId, startsAt: event.startsAt, imageUrl: event.imageUrl, requestCount: event._count.requests };
 }
-function requestView(item: { id: string; type: string; amount: number | null; message: string; createdAt: Date; userName: string; userEmail: string; memberName: string | null; offeringName: string | null; imageFile: string | null }) {
-  return { id: item.id, type: item.type, amount: item.amount, message: item.message, memberName: item.memberName, offeringName: item.offeringName, imageUrl: item.imageFile ? `/daiko-api/requests/${item.id}/image` : null, createdAt: item.createdAt, user: { name: item.userName, email: item.userEmail } };
+function requestView(item: { id: string; type: string; amount: number | null; message: string; createdAt: Date; finishedAt: Date | null; userName: string; userEmail: string; memberName: string | null; offeringName: string | null; imageFile: string | null }) {
+  return { id: item.id, type: item.type, amount: item.amount, message: item.message, memberName: item.memberName, offeringName: item.offeringName, imageUrl: item.imageFile ? `/daiko-api/requests/${item.id}/image` : null, createdAt: item.createdAt, finishedAt: item.finishedAt, user: { name: item.userName, email: item.userEmail } };
 }
 
 export async function createApp(options: { prisma: PrismaClient; resolveIdentity: IdentityResolver; adminEmails: string[]; allowedOrigins: string[]; logger?: boolean; eventImageDirectory?: string; requestImageDirectory?: string; importEvent?: typeof fetchEventImport }): Promise<FastifyInstance> {
@@ -145,11 +145,44 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     const event = await options.prisma.event.create({ data: { name: input.name, groupId: group?.id ?? null, groupName: group?.name ?? input.groupName!, startsAt: new Date(input.startsAt), imageUrl: input.imageUrl || null }, select: eventSelect });
     return reply.code(201).send(eventView(event));
   });
+  app.delete<{ Params: { id: string } }>("/api/events/:id", { preHandler: admin }, async (request, reply) => {
+    // Delete the event and its queue together. Imported event images are
+    // content-addressed and may be shared, so they are left untouched.
+    const result = await options.prisma.$transaction(async tx => {
+      const event = await tx.event.findUnique({ where: { id: request.params.id }, select: { id: true } });
+      if (!event) return null;
+      const items = await tx.request.findMany({ where: { eventId: event.id }, select: { imageFile: true } });
+      const images = [...new Set(items.flatMap(item => item.imageFile ? [item.imageFile] : []))];
+      await tx.request.deleteMany({ where: { eventId: event.id } });
+      await tx.event.delete({ where: { id: event.id } });
+      // Defend against an unexpected shared filename in historical data.
+      const retained = await tx.request.findMany({ where: { imageFile: { in: images } }, select: { imageFile: true } });
+      const retainedFiles = new Set(retained.map(item => item.imageFile));
+      return images.filter(filename => !retainedFiles.has(filename));
+    });
+    if (!result) return reply.code(404).send({ error: "Event not found" });
+    // File cleanup happens after commit; a filesystem error must not imply
+    // that the already-committed database deletion was rolled back.
+    for (const filename of result) {
+      try { await removeRequestImage(requestImageDirectory, filename); }
+      catch (error) { request.log.error({ err: error, filename }, "Failed to remove deleted request image"); }
+    }
+    return reply.code(204).send();
+  });
   app.get<{ Params: { id: string } }>("/api/events/:id/requests", { preHandler: admin }, async (request, reply) => {
     const event = await options.prisma.event.findUnique({ where: { id: request.params.id }, select: { id: true } });
     if (!event) return reply.code(404).send({ error: "Event not found" });
-    const items = await options.prisma.request.findMany({ where: { eventId: event.id }, orderBy: [{ createdAt: "asc" }, { sequence: "asc" }] });
+    const items = await options.prisma.request.findMany({ where: { eventId: event.id, finishedAt: null }, orderBy: [{ createdAt: "asc" }, { sequence: "asc" }] });
+    // Goods submissions are one card each and take priority; stable sorting
+    // retains submission order within each category.
+    items.sort((a, b) => Number(b.type === "GOODS") - Number(a.type === "GOODS"));
     return { requests: items.map(requestView) };
+  });
+  app.post<{ Params: { id: string } }>("/api/requests/:id/finish", { preHandler: admin }, async (request, reply) => {
+    // Marking rather than deleting preserves the request in the user's history.
+    const updated = await options.prisma.request.updateMany({ where: { id: request.params.id, finishedAt: null }, data: { finishedAt: new Date() } });
+    if (!updated.count && !await options.prisma.request.findUnique({ where: { id: request.params.id }, select: { id: true } })) return reply.code(404).send({ error: "Request not found" });
+    return reply.code(204).send();
   });
   app.post<{ Params: { id: string } }>("/api/events/:id/requests", { preHandler: auth, bodyLimit: 8 * 1024 * 1024 }, async (request, reply) => {
     const event = await options.prisma.event.findUnique({ where: { id: request.params.id }, select: { id: true, groupId: true } });

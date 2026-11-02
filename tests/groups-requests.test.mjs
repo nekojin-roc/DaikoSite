@@ -51,6 +51,26 @@ test('groups and custom requests protect images and preserve historical choices'
     assert.equal(saved.offeringName, 'Cheki');
     assert.equal(saved.imageUrl, result.imageUrl);
     assert.equal((await readdir(path.join(dir, 'images'))).length, 1);
+    // Only an administrator can remove an event. Its queue is removed with it,
+    // while other events, their requests and the group remain available.
+    const otherEvent = (await call('POST', '/api/events', 'admin', { name: 'Another', groupId: group.id, startsAt: '2027-05-10T10:00:00Z' })).json();
+    assert.equal((await call('POST', `/api/events/${otherEvent.id}/requests`, 'other', { type: 'GOODS', message: 'Keep me' })).statusCode, 201);
+    const otherOffering = (await call('POST', `/api/groups/${group.id}/offerings`, 'admin', { name: 'Other offering' })).json();
+    const otherImageRequest = (await call('POST', `/api/events/${otherEvent.id}/requests`, 'other', { ...payload, offeringId: otherOffering.id })).json();
+    assert.equal((await readdir(path.join(dir, 'images'))).length, 2);
+    assert.equal((await call('DELETE', `/api/events/${event.id}`, 'fan')).statusCode, 403);
+    assert.equal((await call('DELETE', `/api/events/${event.id}`)).statusCode, 401);
+    assert.equal((await app.inject({ method: 'DELETE', url: `/api/events/${event.id}`, headers: { cookie: 'admin', origin: 'https://other.example' } })).statusCode, 403);
+    assert.equal((await call('DELETE', `/api/events/${event.id}`, 'admin')).statusCode, 204);
+    assert.equal((await call('DELETE', `/api/events/${event.id}`, 'admin')).statusCode, 404);
+    assert.equal((await call('GET', `/api/events/${event.id}/requests`, 'admin')).statusCode, 404);
+    assert.equal((await call('GET', `/api/requests/${result.id}/image`, 'fan')).statusCode, 404);
+    assert.equal((await call('GET', '/api/my-requests', 'fan')).json().requests.length, 0);
+    assert.equal((await call('GET', '/api/my-requests', 'other')).json().requests[0].message, 'Keep me');
+    assert.equal((await call('GET', `/api/requests/${otherImageRequest.id}/image`, 'other')).statusCode, 200);
+    assert.deepEqual((await call('GET', '/api/events', 'fan')).json().events.map(item => item.id), [otherEvent.id]);
+    assert.equal((await call('GET', '/api/groups', 'fan')).json().groups[0].id, group.id);
+    assert.equal((await readdir(path.join(dir, 'images'))).length, 1);
   } finally { await app.close(); await prisma.$disconnect(); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -82,6 +102,12 @@ test('migration links existing group names without losing event or request data'
     assert.equal(groups.length, 1);
     assert.deepEqual(events.map(event => [event.id, event.name, event.groupName, event.groupId]), [['e1', 'Live', 'Idol', groups[0].id], ['e2', 'More', 'idol', groups[0].id]]);
     assert.deepEqual(requests, [{ id: 'r1', eventId: 'e1', type: 'GOODS', message: 'Message' }]);
+    await mkdir(path.join(migrationDir, '20261104000000_request_completion'));
+    await copyFile('prisma/migrations/20261104000000_request_completion/migration.sql', path.join(migrationDir, '20261104000000_request_completion/migration.sql'));
+    const completionMigration = migrate();
+    assert.equal(completionMigration.status, 0, completionMigration.stderr);
+    const preserved = await prisma.$queryRawUnsafe('SELECT id, eventId, type, message, finishedAt FROM Request');
+    assert.deepEqual(preserved, [{ id: 'r1', eventId: 'e1', type: 'GOODS', message: 'Message', finishedAt: null }]);
   } finally { await prisma.$disconnect(); await rm(dir, { recursive: true, force: true }); }
 });
 

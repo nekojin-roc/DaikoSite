@@ -33,6 +33,7 @@
   "The queue is empty": "队列为空",
   "Requests for this event will appear here as they come in.": "收到的活动请求将在此显示。",
   "Welcome to Daiko": "欢迎使用 Daiko",
+  "Login": "登录",
   "Email": "邮箱",
   "Password": "密码",
   "Enter your password": "请输入密码",
@@ -187,5 +188,14 @@
   "Group not found": "未找到团体",
   "Member not found": "未找到成员",
   "Offering not found": "未找到代购服务",
-  "Select a valid member and offering for this event": "请选择该活动的有效成员和代购服务"
+  "Select a valid member and offering for this event": "请选择该活动的有效成员和代购服务",
+  "Delete event": "删除活动",
+  "Event deleted successfully.": "活动已删除。",
+  "Finish": "完成",
+  "Finishing…": "正在完成…",
+  "Finished": "已完成",
+  "Request finished.": "请求已完成。",
+  "Request type": "请求类型",
+  "Member request": "成员请求",
+  "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "确定删除“{{name}}”吗？当前显示的请求数：{{shownCount}}。该活动的所有相关请求也将被永久删除，且无法撤销。"
 }

@@ -61,6 +61,7 @@ model Request {
   userName     String
   userEmail    String
   createdAt    DateTime @default(now())
+  finishedAt   DateTime?
 
   @@index([eventId, createdAt, sequence])
   @@index([userId, createdAt, sequence])

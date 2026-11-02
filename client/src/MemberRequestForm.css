@@ -2,7 +2,9 @@
 .request-form select:focus{border-color:#879bb2;box-shadow:0 0 0 3px #c7d3e044}
 .request-form select:focus-visible{outline:3px solid #a8b9d3;outline-offset:2px}
 .request-form input[type=file]{font-weight:400}
+.member-request-kind{border:0;margin:0;padding:0;min-width:0}.member-request-kind legend{padding:0;margin-bottom:9px;font-size:12px;font-weight:600;color:#354359}.member-request-kind .type-option{justify-content:center}.member-request-kind .type-option:focus-visible{outline:3px solid #a8b9d3;outline-offset:2px}
 .member-request-notice{margin-bottom:20px;padding:12px 14px;border-radius:7px;background:#f4f6f8;color:#536176;font-size:12px;line-height:1.6}
 .member-request-image{margin-top:8px}.member-request-image>img{max-height:280px}.member-request-image .preview-caption span{overflow-wrap:anywhere;min-width:0}.member-request-remove{margin-top:8px}
 .dark .request-form select{background:#111f33;border-color:#394a62;color:#e9f0f8}
 .dark .member-request-notice{background:#1b2a3f;color:#c5d2e1}
+.dark .member-request-kind legend{color:#e9f0f8}
