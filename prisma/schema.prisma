@@ -7,10 +7,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Group {
+  id        String @id @default(cuid())
+  name      String @unique
+  members   Member[]
+  offerings Offering[]
+  events    Event[]
+}
+
+model Member {
+  id      String @id @default(cuid())
+  name    String
+  groupId String
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  @@unique([groupId, name])
+}
+
+model Offering {
+  id       String @id @default(cuid())
+  name     String
+  groupId  String
+  group    Group @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  archived Boolean @default(false)
+  @@index([groupId, archived])
+}
+
 model Event {
   id        String    @id @default(cuid())
   name      String
   groupName String
+  groupId   String?
+  group     Group?    @relation(fields: [groupId], references: [id], onDelete: Restrict)
   startsAt  DateTime
   imageUrl  String?
   createdAt DateTime  @default(now())
@@ -20,17 +47,20 @@ model Event {
 }
 
 model Request {
-  sequence  Int      @id @default(autoincrement())
-  id        String   @unique @default(cuid())
-  eventId   String
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  type      String
-  amount    Int?
-  message   String
-  userId    String
-  userName  String
-  userEmail String
-  createdAt DateTime @default(now())
+  sequence     Int      @id @default(autoincrement())
+  id           String   @unique @default(cuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  type         String
+  amount       Int?
+  message      String
+  memberName   String?
+  offeringName String?
+  imageFile    String?
+  userId       String
+  userName     String
+  userEmail    String
+  createdAt    DateTime @default(now())
 
   @@index([eventId, createdAt, sequence])
   @@index([userId, createdAt, sequence])

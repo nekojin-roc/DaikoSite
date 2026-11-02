@@ -1,10 +1,17 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, Image as ImageIcon, Layers3, LogOut, Plus, Sparkles, Ticket, UserRound, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n, { changeLanguage, supportedLanguage, type Language } from './i18n/config';
+import { appearances, useAppearance } from './Appearance';
+import GroupManagement, { type Group } from './GroupManagement';
+import MemberRequestForm from './MemberRequestForm';
+import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, UserRound, UsersRound, X } from 'lucide-react';
+
+const daikoLogo = new URL('./assets/daiko-logo.jpg', import.meta.url).href;
 
 type User = { id: string; name: string; email: string; role: string };
-type Event = { id: string; name: string; groupName: string; startsAt: string; imageUrl: string | null; requestCount: number };
-type RequestItem = { id: string; type: 'CHEKI' | 'GOODS'; amount: number | null; message: string; createdAt: string; user?: {name: string; email: string}; event?: Pick<Event, 'id' | 'name' | 'groupName' | 'startsAt'> };
-type View = 'events' | 'requests' | 'admin';
+type Event = { id: string; name: string; groupName: string; groupId: string | null; startsAt: string; imageUrl: string | null; requestCount: number };
+type RequestItem = { id: string; type: string; memberName?: string | null; offeringName?: string | null; imageUrl?: string | null; amount: number | null; message: string; createdAt: string; user?: {name: string; email: string}; event?: Pick<Event, 'id' | 'name' | 'groupName' | 'startsAt'> };
+type View = 'events' | 'requests' | 'admin' | 'past' | 'groups' | 'settings';
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { credentials: 'include', ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), ...options.headers } });
@@ -15,16 +22,19 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.status === 204 ? undefined as T : response.json();
 }
 const post = <T,>(path: string, body: object = {}) => api<T>(path, { method: 'POST', body: JSON.stringify(body) });
-const date = (value: string, options: Intl.DateTimeFormatOptions) => new Date(value).toLocaleDateString(undefined, options);
+const date = (value: string, options: Intl.DateTimeFormatOptions) => new Date(value).toLocaleDateString(i18n.resolvedLanguage, options);
 const eventDate = (value: string) => date(value, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
-const time = (value: string) => new Date(value).toLocaleString(undefined, {hour: 'numeric', minute: '2-digit'});
-const submitted = (value: string) => new Date(value).toLocaleString(undefined, {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'});
+const time = (value: string) => new Date(value).toLocaleString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit'});
+const submitted = (value: string) => new Date(value).toLocaleString(i18n.resolvedLanguage, {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'});
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Something went wrong. Please try again.';
+const startOfToday = () => new Date().setHours(0, 0, 0, 0);
 
 function App() {
+  const { t } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<Event[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [myRequests, setMyRequests] = useState<RequestItem[]>([]);
   const [view, setView] = useState<View>('events');
   const [selected, setSelected] = useState<Event | null>(null);
@@ -34,66 +44,237 @@ function App() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [today, setToday] = useState(startOfToday);
   const admin = user?.role?.toUpperCase() === 'ADMIN';
+  const upcomingEvents = events.filter(event => new Date(event.startsAt).getTime() >= today);
+  const pastEvents = events.filter(event => new Date(event.startsAt).getTime() < today).reverse();
 
   const loadEvents = async () => { const result = await api<{events: Event[]}>('/daiko-api/events'); setEvents([...result.events].sort((a,b) => +new Date(a.startsAt) - +new Date(b.startsAt))); };
+  const loadGroups = async () => { const result = await api<{groups: Group[]}>('/daiko-api/groups'); setGroups(result.groups); };
   const loadMyRequests = async () => { const result = await api<{requests: RequestItem[]}>('/daiko-api/my-requests'); setMyRequests(result.requests); };
-  const initialize = async () => { const result = await api<{user: User | null}>('/daiko-api/session'); setUser(result.user); if (result.user) await Promise.all([loadEvents(), loadMyRequests()]); };
+  const initialize = async () => { const result = await api<{user: User | null}>('/daiko-api/session'); setUser(result.user); if (result.user) { const isAdmin = result.user.role?.toUpperCase() === 'ADMIN'; setView(isAdmin ? 'admin' : 'events'); await Promise.all([loadEvents(), loadGroups(), ...(isAdmin ? [] : [loadMyRequests()])]); } };
   useEffect(() => { initialize().catch(e => setError(errorText(e))).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refreshDay = () => {
+      clearTimeout(timer);
+      setToday(startOfToday());
+      const nextDay = new Date();
+      nextDay.setHours(24, 0, 0, 0);
+      timer = setTimeout(refreshDay, nextDay.getTime() - Date.now() + 50);
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') refreshDay(); };
+    refreshDay();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
   const signIn = async (email: string, password: string) => { setBusy(true); setError(''); try { await post('/api/auth/sign-in/email', {email, password}); await initialize(); } catch(e) { setError(errorText(e)); } finally {setBusy(false);} };
-  const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); setQueueEvent(null); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
+  const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); setQueueEvent(null); setQueue([]); setEvents([]); setGroups([]); setMyRequests([]); setShowCreate(false); setNotice(''); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
   const navigate = (next: View) => {setView(next); setSelected(null); setQueueEvent(null); setShowCreate(false); setError(''); setNotice('');};
-  const selectQueue = async (event: Event) => {setQueueEvent(event); setError(''); setBusy(true); try {const result = await api<{requests: RequestItem[]}>(`/daiko-api/events/${event.id}/requests`); setQueue([...result.requests].sort((a,b) => +new Date(a.createdAt) - +new Date(b.createdAt)));} catch(e){setError(errorText(e));} finally {setBusy(false);} };
+  const selectQueue = async (event: Event) => {setQueueEvent(event); setQueue([]); setError(''); setBusy(true); try {const result = await api<{requests: RequestItem[]}>(`/daiko-api/events/${event.id}/requests`); setQueue([...result.requests].sort((a,b) => +new Date(a.createdAt) - +new Date(b.createdAt)));} catch(e){setError(errorText(e));} finally {setBusy(false);} };
 
-  if (loading) return <div className="loading"><span className="spinner"/> Loading Daiko…</div>;
+  if (loading) return <div className="loading"><span className="spinner"/> {t("Loading Daiko…")}</div>;
   if (!user) return <Login onSubmit={signIn} busy={busy} error={error}/>;
-  const firstName = user.name?.trim().split(/\s+/)[0] || 'there';
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark"><Sparkles size={17}/></span><span>Daiko</span></div>
-      <div className="nav-label">YOUR SPACE</div>
-      <nav className="navigation" aria-label="Main navigation">
-        <button className={view === 'events' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('events')}><CalendarDays size={17}/> Events</button>
-        <button className={view === 'requests' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('requests')}><ClipboardList size={17}/> My requests</button>
-        {admin && <><div className="nav-label admin-label">MANAGE</div><button className={view === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('admin')}><Layers3 size={17}/> Event management</button></>}
+      <div className="brand"><img className="brand-mark" src={daikoLogo} alt=""/><span>Daiko</span></div>
+      <div className="nav-label">{admin ? t('MANAGE') : t('YOUR SPACE')}</div>
+      <nav className="navigation" aria-label={t("Main navigation")}>
+        {admin ? <><button className={view === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('admin')}><Layers3 size={17}/> {t("Event management")}</button><button className={view === 'past' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('past')}><History size={17}/> {t("Past events")}</button><button className={view === 'groups' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('groups')}><UsersRound size={17}/> {t('Manage groups')}</button></> : <><button className={view === 'events' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('events')}><CalendarDays size={17}/> {t("Events")}</button><button className={view === 'requests' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('requests')}><ClipboardList size={17}/> {t("My requests")}</button></>}
+        <button className={view === 'settings' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('settings')}><SettingsIcon size={17}/> {t('Settings')}</button>
       </nav>
-      <div className="sidebar-bottom"><div className="profile"><span className="avatar">{(user.name || user.email).slice(0,1).toUpperCase()}</span><span className="profile-text"><strong>{user.name}</strong><small>{user.email}</small></span></div><button className="signout" onClick={signOut} disabled={busy}><LogOut size={16}/> Sign out</button></div>
+      <div className="sidebar-bottom"><div className="profile"><span className="avatar">{(user.name || user.email).slice(0,1).toUpperCase()}</span><span className="profile-text"><strong>{user.name}</strong><small>{user.email}</small></span></div><button className="signout" onClick={signOut} disabled={busy}><LogOut size={16}/> {t("Sign out")}</button></div>
     </aside>
     <div className="main-wrap">
-      <header className="mobile-header"><div className="brand"><span className="brand-mark"><Sparkles size={16}/></span>Daiko</div><button className="icon-button" aria-label="Sign out" title="Sign out" onClick={signOut}><LogOut size={18}/></button></header>
-      <div className="mobile-nav"><button className={view === 'events' ? 'active' : ''} onClick={() => navigate('events')}>Events</button><button className={view === 'requests' ? 'active' : ''} onClick={() => navigate('requests')}>My requests</button>{admin && <button className={view === 'admin' ? 'active' : ''} onClick={() => navigate('admin')}>Manage</button>}</div>
+      <header className="mobile-header"><div className="brand"><img className="brand-mark" src={daikoLogo} alt=""/>Daiko</div><button className="icon-button" aria-label={t("Sign out")} title={t("Sign out")} onClick={signOut}><LogOut size={18}/></button></header>
+      <div className="mobile-nav">{admin ? <><button className={view === 'admin' ? 'active' : ''} onClick={() => navigate('admin')}>{t("Manage")}</button><button className={view === 'past' ? 'active' : ''} onClick={() => navigate('past')}>{t("Past events")}</button><button className={view === 'groups' ? 'active' : ''} onClick={() => navigate('groups')}>{t('Groups')}</button></> : <><button className={view === 'events' ? 'active' : ''} onClick={() => navigate('events')}>{t("Events")}</button><button className={view === 'requests' ? 'active' : ''} onClick={() => navigate('requests')}>{t("My requests")}</button></>}<button className={view === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}>{t('Settings')}</button></div>
       <main className="content">
-        {error && <div className="alert error" role="alert">{error}<button aria-label="Dismiss" onClick={() => setError('')}><X size={16}/></button></div>}
-        {notice && <div className="alert success" role="status"><Check size={17}/>{notice}<button aria-label="Dismiss" onClick={() => setNotice('')}><X size={16}/></button></div>}
-        {view === 'events' && !selected && <><div className="page-heading"><div><div className="eyebrow">YOUR REQUESTS, MADE SIMPLE</div><h1>Find your next event</h1><p>Hi {firstName}, choose an event to send in a daiko request.</p></div></div><div className="section-heading"><div><h2>Events</h2><p>Choose an event to get started</p></div><span className="count">{events.length} {events.length === 1 ? 'event' : 'events'}</span></div><div className="event-list">{events.length ? events.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title="No events yet" text="Events will appear here once they’ve been added."/>}</div><div className="footnote"><Sparkles size={15}/> A little help getting closer to your favorite moments.</div></>}
-        {view === 'events' && selected && <RequestForm event={selected} busy={busy} onBack={() => setSelected(null)} onSubmit={async (type, amount, message) => {setBusy(true); setError(''); try {await post(`/daiko-api/events/${selected.id}/requests`, {type, ...(type === 'CHEKI' ? {amount} : {}), message}); await Promise.all([loadEvents(), loadMyRequests()]); setSelected(null); setNotice('Your request has been submitted. You can find it in My requests.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
-        {view === 'requests' && <><div className="page-heading"><div><div className="eyebrow">YOUR ACTIVITY</div><h1>My requests</h1><p>A record of the requests you’ve sent in.</p></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> New request</button></div><div className="section-heading"><div><h2>Request history</h2><p>Your submitted requests, all in one place</p></div><span className="count">{myRequests.length} total</span></div><div className="request-list">{myRequests.length ? myRequests.map(request => <RequestCard key={request.id} request={request}/>) : <Empty icon={<ClipboardList size={22}/>} title="Nothing here yet" text="Once you submit a request, you’ll see it here."/>}</div></>}
-        {view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading"><div><div className="eyebrow">ADMINISTRATION</div><h1>Event management</h1><p>Add events and review incoming requests.</p></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> Add event</button></div><div className="section-heading"><div><h2>All events</h2><p>Select an event to view its queue</p></div><span className="count">{events.length} {events.length === 1 ? 'event' : 'events'}</span></div><div className="event-list">{events.length ? events.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title="No events yet" text="Add your first event to start receiving requests."/>}</div></>}
-        {view === 'admin' && showCreate && <CreateEvent busy={busy} onBack={() => setShowCreate(false)} onSubmit={async values => {setBusy(true); setError(''); try {await post('/daiko-api/events', values); await loadEvents(); setShowCreate(false); setNotice('Event added successfully.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
-        {view === 'admin' && queueEvent && <><button className="back" onClick={() => setQueueEvent(null)}><ArrowLeft size={16}/> All events</button><div className="page-heading"><div><div className="eyebrow">EVENT QUEUE</div><h1>{queueEvent.name}</h1><p>{queueEvent.groupName} <span className="dot">·</span> {eventDate(queueEvent.startsAt)}</p></div><span className="count">{queue.length} {queue.length === 1 ? 'request' : 'requests'}</span></div><div className="section-heading"><div><h2>Request queue</h2><p>Ordered by submission time, earliest first</p></div></div>{busy ? <div className="loading-inline">Loading queue…</div> : <div className="request-list">{queue.length ? queue.map((request, index) => <RequestCard key={request.id} request={request} position={index + 1}/>) : <Empty icon={<ClipboardList size={22}/>} title="The queue is empty" text="Requests for this event will appear here as they come in."/>}</div>}</>}
+        {error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}<button aria-label={t("Dismiss")} onClick={() => setError('')}><X size={16}/></button></div>}
+        {notice && <div className="alert success" role="status"><Check size={17}/>{t(notice, {defaultValue: notice})}<button aria-label={t("Dismiss")} onClick={() => setNotice('')}><X size={16}/></button></div>}
+        {view === 'events' && !selected && <><div className="page-heading"><div><h1>{t("Find your next event")}</h1></div></div><div className="section-heading"><div><h2>{t("Events")}</h2></div><span className="count">{t('eventCount', {count: events.length})}</span></div><div className="event-list">{events.length ? events.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No events yet")} text={t("Events will appear here once they’ve been added.")}/>}</div><div className="footnote"><Sparkles size={15}/> {t("A little help getting closer to your favorite moments.")}</div></>}
+        {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={async payload => {setBusy(true); setError(''); try {await post(`/daiko-api/events/${selected.id}/requests`, payload); await Promise.all([loadEvents(), loadMyRequests()]); setSelected(null); setNotice('Your request has been submitted. You can find it in My requests.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
+        {view === 'requests' && <><div className="page-heading"><div><h1>{t("My requests")}</h1></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> {t("New request")}</button></div><div className="section-heading"><div><h2>{t("Request history")}</h2></div><span className="count">{t('totalCount', {count: myRequests.length})}</span></div><div className="request-list">{myRequests.length ? myRequests.map(request => <RequestCard key={request.id} request={request}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("Nothing here yet")} text={t("Once you submit a request, you’ll see it here.")}/>}</div></>}
+        {admin && view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading"><div><h1>{t("Event management")}</h1></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> {t("Add event")}</button></div><div className="section-heading"><div><h2>{t("Upcoming events")}</h2></div><span className="count">{t('eventCount', {count: upcomingEvents.length})}</span></div><div className="event-list">{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No upcoming events")} text={t("Add an event to start receiving requests.")}/>}</div></>}
+        {admin && view === 'past' && !queueEvent && <><div className="page-heading"><div><h1>{t("Past events")}</h1></div></div><div className="section-heading"><div><h2>{t("Event history")}</h2></div><span className="count">{t('eventCount', {count: pastEvents.length})}</span></div><div className="event-list">{pastEvents.length ? pastEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<History size={22}/>} title={t("No past events")} text={t("Past events will appear here.")}/>}</div></>}
+        {view === 'admin' && showCreate && <CreateEvent groups={groups} busy={busy} onBack={() => setShowCreate(false)} onSubmit={async values => {setBusy(true); setError(''); try {await post('/daiko-api/events', values); await loadEvents(); setShowCreate(false); setNotice('Event added successfully.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
+        {admin && (view === 'admin' || view === 'past') && queueEvent && <><button className="back" onClick={() => setQueueEvent(null)}><ArrowLeft size={16}/> {view === 'past' ? t('Past events') : t('Upcoming events')}</button><div className="page-heading"><div><h1>{queueEvent.name}</h1></div><span className="count">{t('requestCount', {count: queue.length})}</span></div><div className="section-heading"><div><h2>{t("Request queue")}</h2></div></div>{busy ? <div className="loading-inline">{t("Loading queue…")}</div> : <div className="request-list">{queue.length ? queue.map((request, index) => <RequestCard key={request.id} request={request} position={index + 1}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("The queue is empty")} text={t("Requests for this event will appear here as they come in.")}/>}</div>}</>}
+        {admin && view === 'groups' && <GroupManagement groups={groups} onReload={async () => {await Promise.all([loadGroups(), loadEvents()]);}}/>}
+        {view === 'settings' && <Settings/>}
       </main>
     </div>
   </div>;
 }
 
+
+function Settings() {
+  const { t, i18n: currentI18n } = useTranslation();
+  const { appearance, setAppearance } = useAppearance();
+  const labels = {auto: 'Auto', dark: 'Dark', bright: 'Bright'} as const;
+  return <><div className="page-heading"><h1>{t('Settings')}</h1></div><section className="panel settings-panel" aria-labelledby="preferences-title">
+    <div className="panel-title"><h2 id="preferences-title">{t('Preferences')}</h2></div>
+    <div className="settings-field"><div><label htmlFor="preferred-language">{t('Language')}</label><p>{t('Language and appearance are saved in this browser.')}</p></div>
+      <select id="preferred-language" value={supportedLanguage(currentI18n.resolvedLanguage ?? currentI18n.language)} onChange={event => void changeLanguage(event.target.value as Language)}>
+        <option value="en" lang="en">English</option><option value="zh" lang="zh">中文</option><option value="ja" lang="ja">日本語</option>
+      </select>
+    </div>
+    <div className="settings-field"><div><span id="appearance-label" className="settings-label">{t('Appearance')}</span><p>{t('Appearance follows your device in Auto mode.')}</p></div>
+      <div className="appearance-toggle" role="group" aria-labelledby="appearance-label">{appearances.map(value => <button type="button" key={value} aria-pressed={appearance === value} className={appearance === value ? 'selected' : ''} onClick={() => setAppearance(value)}>{t(labels[value])}</button>)}</div>
+    </div>
+  </section></>;
+}
+
 function Login({onSubmit, busy, error}: {onSubmit: (email: string, password: string) => void; busy: boolean; error: string}) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  return <main className="login-page"><div className="login-card"><div className="login-icon"><Sparkles size={22}/></div><h1>Welcome to Daiko</h1><p>Sign in to send and keep track of your requests.</p>{error && <div className="alert error" role="alert">{error}</div>}<form onSubmit={e => {e.preventDefault(); onSubmit(email, password);}}><label>Email<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"/></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Enter your password"/></label><button className="button primary full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={16}/></button></form><div className="login-divider"/><p className="login-help">Use your ParcelHub account to sign in.<br/><a href="https://parcelhub.nekoj.in/auth">Create an account or manage your password <ArrowRight size={13}/></a></p></div><p className="login-footer">A little closer to the moments that matter.</p></main>;
+  return <main className="login-page"><div className="login-card"><img className="login-icon" src={daikoLogo} alt=""/><h1>{t("Welcome to Daiko")}</h1>{error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}</div>}<form onSubmit={e => {e.preventDefault(); onSubmit(email, password);}}><label>{t("Email")}<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"/></label><label>{t("Password")}<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t("Enter your password")}/></label><button className="button primary full" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')} <ArrowRight size={16}/></button></form><div className="login-divider"/><p className="login-help">{t("Use your ParcelHub account to sign in.")}<br/><a href={window.location.hostname === 'localhost' ? 'http://localhost:5173/auth' : 'https://parcelhub.nekoj.in/auth'}>{t("Create an account or manage your password")} <ArrowRight size={13}/></a></p></div><p className="login-footer">{t("A little closer to the moments that matter.")}</p></main>;
 }
 function EventCard({event, onClick, admin = false}: {event: Event; onClick: () => void; admin?: boolean}) {
+  const { t } = useTranslation();
   const [broken, setBroken] = useState(false);
-  return <button className="event-card" onClick={onClick}><div className="event-image">{event.imageUrl && !broken ? <img src={event.imageUrl} alt="" onError={() => setBroken(true)}/> : <div className="image-placeholder"><Sparkles size={23}/><span>DAIKO EVENT</span></div>}</div><div className="event-info"><div className="event-date"><CalendarDays size={14}/>{eventDate(event.startsAt)} <span>·</span> {time(event.startsAt)}</div><h3>{event.name}</h3><p>{event.groupName}</p>{admin && <span className="queue-count">{event.requestCount ?? 0} requests</span>}</div><div className="event-action"><span>{admin ? 'View queue' : 'Make a request'}</span><ChevronRight size={18}/></div></button>;
+  return <button className="event-card" onClick={onClick}><div className="event-image">{event.imageUrl && !broken ? <img src={event.imageUrl} alt="" onError={() => setBroken(true)}/> : <div className="image-placeholder"><Sparkles size={23}/><span>DAIKO EVENT</span></div>}</div><div className="event-info"><div className="event-date"><CalendarDays size={14}/>{eventDate(event.startsAt)} <span>·</span> {time(event.startsAt)}</div><h3>{event.name}</h3><p>{event.groupName}</p>{admin && <span className="queue-count">{t('requestCount', {count: event.requestCount ?? 0})}</span>}</div><div className="event-action"><span>{admin ? t('View queue') : t('Make a request')}</span><ChevronRight size={18}/></div></button>;
 }
-function RequestForm({event, onBack, onSubmit, busy}: {event: Event; onBack: () => void; onSubmit: (type: 'CHEKI'|'GOODS', amount: number, message: string) => void; busy: boolean}) {
- const [type, setType] = useState<'CHEKI'|'GOODS'>('CHEKI'); const [amount, setAmount] = useState(1); const [message, setMessage] = useState('');
- return <><button className="back" onClick={onBack}><ArrowLeft size={16}/> Back to events</button><div className="page-heading"><div><div className="eyebrow">MAKE A REQUEST</div><h1>Tell us what you need</h1><p>Share the details below and your request will be added to the queue.</p></div></div><div className="form-layout"><form className="panel request-form" onSubmit={e => {e.preventDefault(); onSubmit(type, amount, message.trim());}}><div className="panel-title"><h2>Request details</h2><p>What would you like to request?</p></div><div className="type-picker"><button type="button" className={type === 'CHEKI' ? 'type-option selected' : 'type-option'} onClick={() => setType('CHEKI')}><span className="type-icon"><Ticket size={19}/></span><span><strong>Cheki</strong><small>Photo and message</small></span><span className="radio"/></button><button type="button" className={type === 'GOODS' ? 'type-option selected' : 'type-option'} onClick={() => setType('GOODS')}><span className="type-icon"><Sparkles size={19}/></span><span><strong>Goods</strong><small>Merchandise request</small></span><span className="radio"/></button></div>{type === 'CHEKI' && <label>Amount <span className="required">*</span><input type="number" min="1" max="1000" step="1" required value={amount} onChange={e => setAmount(Number(e.target.value))}/><small>How many cheki would you like?</small></label>}<label>{type === 'CHEKI' ? 'Message to the idol' : 'Request details'} <span className="required">*</span><textarea required minLength={1} maxLength={5000} rows={6} value={message} onChange={e => setMessage(e.target.value)} placeholder={type === 'CHEKI' ? 'Write the message you’d like to send…' : 'Tell us what goods you would like…'}/><small>{type === 'CHEKI' ? 'Include anything you’d like the idol to know.' : 'Please include the details needed to fulfill your request.'}</small></label><div className="form-actions"><button type="button" className="button secondary" onClick={onBack}>Cancel</button><button className="button primary" disabled={busy || !message.trim()}>{busy ? 'Submitting…' : 'Submit request'} <ArrowRight size={16}/></button></div></form><aside className="summary-card"><div className="summary-label">SELECTED EVENT</div><div className="summary-icon"><CalendarDays size={20}/></div><h3>{event.name}</h3><p>{event.groupName}</p><div className="summary-date"><CalendarDays size={15}/>{eventDate(event.startsAt)}<br/><Clock3 size={15}/>{time(event.startsAt)}</div></aside></div></>;
+function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSubmit: (values: {name: string; groupId: string; startsAt: string; imageUrl: string}) => void; busy: boolean; groups: Group[]}) {
+  const { t } = useTranslation();
+ const [name, setName] = useState('');
+ const [groupId, setGroupId] = useState('');
+ const [startsAt, setStartsAt] = useState('');
+ const [eventUrl, setEventUrl] = useState('');
+ const [manualImageUrl, setManualImageUrl] = useState('');
+ const [importedImageUrl, setImportedImageUrl] = useState('');
+ const [imageFailed, setImageFailed] = useState(false);
+ const [importStatus, setImportStatus] = useState<'idle' | 'waiting' | 'loading' | 'success' | 'error'>('idle');
+ const [importMessage, setImportMessage] = useState('');
+ const importTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+ const importController = useRef<AbortController | null>(null);
+ const importSequence = useRef(0);
+ const lastAttempt = useRef('');
+ const nameEdited = useRef(false);
+ const imageEdited = useRef(false);
+ const nameRevision = useRef(0);
+ const imageRevision = useRef(0);
+ const sourceUrl = eventImportUrl(eventUrl);
+ const importing = importStatus === 'waiting' || importStatus === 'loading';
+ const imageUrl = manualImageUrl.trim() || importedImageUrl;
+
+ const fetchEvent = useCallback(async (url: string, retry = false) => {
+   if (importTimer.current) clearTimeout(importTimer.current);
+   if (!url || (!retry && lastAttempt.current === url)) return;
+   importController.current?.abort();
+   const controller = new AbortController();
+   importController.current = controller;
+   const sequence = ++importSequence.current;
+   const startingNameRevision = nameRevision.current;
+   const startingImageRevision = imageRevision.current;
+   lastAttempt.current = url;
+   setImportStatus('loading');
+   setImportMessage('Fetching the event title and main image…');
+   try {
+     const result = await api<{name: string; imageUrl: string}>('/daiko-api/events/import', {
+       method: 'POST', body: JSON.stringify({url}), signal: controller.signal,
+     });
+     if (controller.signal.aborted || sequence !== importSequence.current) return;
+     const updateName = !nameEdited.current && nameRevision.current === startingNameRevision;
+     const updateImage = !imageEdited.current && imageRevision.current === startingImageRevision;
+     if (updateName) setName(result.name);
+     if (updateImage) {
+       setImportedImageUrl(result.imageUrl);
+       setImageFailed(false);
+     }
+     setImportStatus('success');
+     setImportMessage(updateName && updateImage
+       ? 'Event title and main image fetched. Add the group, date and time below.'
+       : 'Event details fetched. Your manual changes were kept; review the details below.');
+   } catch (error) {
+     if (controller.signal.aborted || sequence !== importSequence.current) return;
+     setImportStatus('error');
+     setImportMessage(errorText(error));
+   } finally {
+     if (sequence === importSequence.current) importController.current = null;
+   }
+ }, []);
+
+ useEffect(() => {
+   if (!sourceUrl) return;
+   setImportStatus('waiting');
+   setImportMessage('Preparing to fetch the event…');
+   importTimer.current = setTimeout(() => void fetchEvent(sourceUrl), 500);
+   return () => {
+     if (importTimer.current) clearTimeout(importTimer.current);
+     importController.current?.abort();
+     importSequence.current += 1;
+   };
+ }, [sourceUrl, fetchEvent]);
+
+ useEffect(() => setImageFailed(false), [imageUrl]);
+
+ const changeEventUrl = (value: string) => {
+   setEventUrl(value);
+   if ((eventImportUrl(value) || value.trim()) === (sourceUrl || eventUrl.trim())) return;
+   if (importTimer.current) clearTimeout(importTimer.current);
+   importController.current?.abort();
+   importSequence.current += 1;
+   lastAttempt.current = '';
+   setImportStatus('idle');
+   setImportMessage('');
+   if (!nameEdited.current) setName('');
+   setImportedImageUrl('');
+ };
+
+ return <>
+   <button className="back" onClick={onBack}><ArrowLeft size={16}/> {t("Event management")}</button>
+   <div className="page-heading"><div><h1>{t("Add an event")}</h1></div></div>
+   <form className="panel create-form" onSubmit={e => {
+     e.preventDefault();
+     if (busy || importing) return;
+     const dateValue = new Date(String(new FormData(e.currentTarget).get('startsAt') || ''));
+     if (!Number.isFinite(dateValue.getTime())) return;
+     onSubmit({name: name.trim(), groupId, startsAt: dateValue.toISOString(), imageUrl});
+   }}>
+     <div className="event-import">
+       <label htmlFor="event-source-url">{t("TicketDive or LivePocket event URL")}</label>
+       <div className="event-import-row">
+         <input id="event-source-url" type="text" inputMode="url" autoComplete="off" value={eventUrl} disabled={busy} placeholder="https://ticketdive.com/event/…" aria-describedby="event-import-help" onChange={e => changeEventUrl(e.target.value)} onBlur={() => {
+           if (eventUrl.trim() && !sourceUrl) {
+             setImportStatus('error');
+             setImportMessage('Use an HTTPS TicketDive /event/ link or LivePocket /e/ link. You can also enter the details manually.');
+           }
+         }} onKeyDown={e => {
+           if (e.key === 'Enter') {
+             e.preventDefault();
+             if (sourceUrl && !importing && !busy) void fetchEvent(sourceUrl, true);
+           }
+         }}/>
+         <button type="button" className="button secondary" disabled={busy || importing || !sourceUrl} onClick={() => void fetchEvent(sourceUrl, true)}>{importing ? <><span className="spinner" aria-hidden="true"/> {t("Fetching…")}</> : importStatus === 'error' ? t('Retry fetch') : t('Fetch details')}</button>
+       </div>
+       <p id="event-import-help" className="field-help">{t("The event title and original main image are fetched automatically. You can edit the details below.")}</p>
+       {importMessage && <div className={`import-status ${importStatus}`} role={importStatus === 'error' ? 'alert' : 'status'}>{importStatus === 'success' && <Check size={15} aria-hidden="true"/>}<span>{t(importMessage, {defaultValue: importMessage})}{importStatus === 'error' && importMessage !== 'Use an HTTPS TicketDive /event/ link or LivePocket /e/ link. You can also enter the details manually.' ? ` ${t('You can retry or enter the details manually.')}` : ''}</span></div>}
+     </div>
+     <div className="panel-title"><h2>{t("Event details")}</h2></div>
+     <label>{t("Event name")} <span className="required">*</span><input required maxLength={200} value={name} onChange={e => {nameEdited.current = true; nameRevision.current += 1; setName(e.target.value);}} placeholder={t("e.g. Spring Live 2026")}/></label>
+     <label>{t("Group name")} <span className="required">*</span><select required value={groupId} onChange={e => setGroupId(e.target.value)}><option value="">{t("Select a group")}</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select>{groups.length === 0 && <small>{t("Add a group in Manage groups first.")}</small>}</label>
+     <label>{t("Date and time")} <span className="required">*</span><input required type="datetime-local" name="startsAt" value={startsAt} onInput={e => setStartsAt(e.currentTarget.value)}/><small>{t("Shown in your local time.")}</small></label>
+     <label>{t("Main visual URL")}<input type="url" value={manualImageUrl} onChange={e => {imageEdited.current = true; imageRevision.current += 1; setImportedImageUrl(''); setManualImageUrl(e.target.value);}} placeholder="https://example.com/event-image.jpg"/><small>{importedImageUrl ? t('Main image imported. Enter a direct image URL to replace it.') : t('Optional. Use a direct image link if you want to add your own visual.')}</small></label>
+     {imageUrl && <div className="event-image-preview">
+       {imageFailed ? <p className="preview"><ImageIcon size={16} aria-hidden="true"/> {t("Unable to preview this image. Check the URL or try fetching again.")}</p> : <img src={imageUrl} alt={name ? t('imageAlt', {name}) : t('Event main visual preview')} onError={() => setImageFailed(true)}/>}
+       <div className="preview-caption"><span>{importedImageUrl ? t('Imported main visual') : t('Main visual preview')}</span><button type="button" className="text-button" onClick={() => {imageEdited.current = true; imageRevision.current += 1; setImportedImageUrl(''); setManualImageUrl('');}}>{t("Remove image")}</button></div>
+     </div>}
+     <div className="form-actions"><button type="button" className="button secondary" onClick={onBack}>{t("Cancel")}</button><button className="button primary" disabled={busy || importing || !name.trim() || !groupId}>{busy ? t('Adding…') : t('Add event')} <ArrowRight size={16}/></button></div>
+   </form>
+ </>;
 }
-function CreateEvent({onBack, onSubmit, busy}: {onBack: () => void; onSubmit: (values: {name: string; groupName: string; startsAt: string; imageUrl: string}) => void; busy: boolean}) {
- const [name, setName] = useState(''); const [groupName, setGroupName] = useState(''); const [startsAt, setStartsAt] = useState(''); const [imageUrl, setImageUrl] = useState('');
- return <><button className="back" onClick={onBack}><ArrowLeft size={16}/> Event management</button><div className="page-heading"><div><div className="eyebrow">ADMINISTRATION</div><h1>Add an event</h1><p>Enter the details to make this event available for requests.</p></div></div><form className="panel create-form" onSubmit={e => {e.preventDefault(); onSubmit({name: name.trim(), groupName: groupName.trim(), startsAt: new Date(startsAt).toISOString(), imageUrl: imageUrl.trim()});}}><div className="panel-title"><h2>Event details</h2><p>You can add a main visual using an image URL.</p></div><label>Event name <span className="required">*</span><input required maxLength={200} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Spring Live 2026"/></label><label>Group name <span className="required">*</span><input required maxLength={200} value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Name of the group"/></label><label>Date and time <span className="required">*</span><input required type="datetime-local" value={startsAt} onChange={e => setStartsAt(e.target.value)}/><small>Shown in your local time.</small></label><label>Main visual URL<input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://example.com/event-image.jpg"/><small>Optional. Use a direct link to the event image.</small></label>{imageUrl && <div className="preview"><ImageIcon size={16}/> Image URL added</div>}<div className="form-actions"><button type="button" className="button secondary" onClick={onBack}>Cancel</button><button className="button primary" disabled={busy || !name.trim() || !groupName.trim()}>{busy ? 'Adding…' : 'Add event'} <ArrowRight size={16}/></button></div></form></>;
+
+function eventImportUrl(value: string): string {
+ try {
+   const url = new URL(value.trim());
+   if (url.protocol !== 'https:' || url.username || url.password || url.port) return '';
+   const ticketDive = ['ticketdive.com', 'www.ticketdive.com'].includes(url.hostname) && /^\/event\/[a-z\d_-]+\/?$/i.test(url.pathname);
+   const livePocket = ['livepocket.jp', 't.livepocket.jp'].includes(url.hostname) && /^\/e\/[a-z\d_-]+\/?$/i.test(url.pathname);
+   return ticketDive || livePocket ? `${url.origin}${url.pathname.replace(/\/$/, '')}` : '';
+ } catch { return ''; }
 }
 function RequestCard({request, position}: {request: RequestItem; position?: number}) {
- return <article className="request-card"><div className="request-top"><div className="request-meta">{position && <span className="position">{String(position).padStart(2, '0')}</span>}<span className="badge">{request.type === 'CHEKI' ? 'Cheki' : 'Goods'}</span>{request.type === 'CHEKI' && <span className="amount">× {request.amount}</span>}</div><time><Clock3 size={14}/>{submitted(request.createdAt)}</time></div>{request.event && <><h3>{request.event.name}</h3><p className="request-subtitle">{request.event.groupName} · {eventDate(request.event.startsAt)}</p></>}{request.user && <div className="request-user"><UserRound size={15}/><strong>{request.user.name}</strong><span>{request.user.email}</span></div>}<p className="request-message">{request.message}</p></article>;
+  const { t } = useTranslation();
+ return <article className="request-card"><div className="request-top"><div className="request-meta">{position && <span className="position">{String(position).padStart(2, '0')}</span>}<span className="badge">{request.offeringName || (request.type === 'CHEKI' ? t('Cheki') : t('Goods'))}</span>{request.amount != null && <span className="amount">× {request.amount}</span>}</div><time><Clock3 size={14}/>{submitted(request.createdAt)}</time></div>{request.event && <><h3>{request.event.name}</h3><p className="request-subtitle">{request.event.groupName} · {eventDate(request.event.startsAt)}</p></>}{request.user && <div className="request-user"><UserRound size={15}/><strong>{request.user.name}</strong><span>{request.user.email}</span></div>}{request.memberName && <div className="request-member">{t("Member")}: <strong>{request.memberName}</strong></div>}<p className="request-message">{request.message}</p>{request.imageUrl && <a className="request-attachment" href={request.imageUrl} target="_blank" rel="noopener noreferrer"><img src={request.imageUrl} alt={t("Attached image")}/></a>}</article>;
 }
 function Empty({icon, title, text}: {icon: React.ReactNode; title: string; text: string}) {return <div className="empty"><div className="empty-icon">{icon}</div><h3>{title}</h3><p>{text}</p></div>;}
 export default App;

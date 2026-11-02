@@ -13,6 +13,8 @@ const app = await createApp({
   resolveIdentity: parcelHubIdentity(required("PARCELHUB_URL")),
   adminEmails: required("DAIKO_ADMIN_EMAILS").split(","),
   allowedOrigins: required("DAIKO_ALLOWED_ORIGINS").split(",").map(value => value.trim()).filter(Boolean),
+  eventImageDirectory: process.env.DAIKO_EVENT_IMAGE_DIR?.trim() || undefined,
+  requestImageDirectory: process.env.DAIKO_REQUEST_IMAGE_DIR?.trim() || undefined,
 });
 app.addHook("onClose", async () => { await prisma.$disconnect(); });
 const close = async () => { await app.close(); process.exit(0); };

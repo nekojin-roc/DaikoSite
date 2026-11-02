@@ -9,6 +9,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: file:/app/data/daiko.db
+      DAIKO_EVENT_IMAGE_DIR: /app/data/event-images
+      DAIKO_REQUEST_IMAGE_DIR: /app/data/request-images
       PARCELHUB_URL: http://parcelhub-server-1:3001
       DAIKO_ADMIN_EMAILS: ${DAIKO_ADMIN_EMAILS:?Set DAIKO_ADMIN_EMAILS in a private env file}
       DAIKO_ALLOWED_ORIGINS: https://daiko.nekoj.in
