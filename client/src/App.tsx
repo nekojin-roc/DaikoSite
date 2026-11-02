@@ -4,6 +4,7 @@ import i18n, { changeLanguage, supportedLanguage, type Language } from './i18n/c
 import { appearances, useAppearance } from './Appearance';
 import GroupManagement, { type Group } from './GroupManagement';
 import MemberRequestForm from './MemberRequestForm';
+import { version } from '../package.json';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, UserRound, UsersRound, X } from 'lucide-react';
 
 const daikoLogo = new URL('./assets/daiko-logo.jpg', import.meta.url).href;
@@ -120,6 +121,10 @@ function Settings() {
     <div className="settings-field"><div><span id="appearance-label" className="settings-label">{t('Appearance')}</span><p>{t('Appearance follows your device in Auto mode.')}</p></div>
       <div className="appearance-toggle" role="group" aria-labelledby="appearance-label">{appearances.map(value => <button type="button" key={value} aria-pressed={appearance === value} className={appearance === value ? 'selected' : ''} onClick={() => setAppearance(value)}>{t(labels[value])}</button>)}</div>
     </div>
+  </section><section className="panel settings-panel about-panel" aria-labelledby="about-title">
+    <div className="panel-title"><h2 id="about-title">{t('About')}</h2></div>
+    <div className="settings-field"><span className="settings-label">{t('Version')}</span><span className="about-version">{version}</span></div>
+    <p className="about-copyright">{t('copyrightNotice', {year: new Date().getFullYear()})}</p>
   </section></>;
 }
 
