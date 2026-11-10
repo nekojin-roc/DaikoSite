@@ -1,25 +1,28 @@
-# Daiko staging
+# Production deployment (historical staging names)
 
-This configuration runs Daiko on `127.0.0.1:3334` for a Cloudflare Tunnel route at `daiko.nekoj.in`. It stores staging data in its own Docker volume, separate from production Daiko. When the application configuration is active, the app is served at `/` and old `/daiko/` links redirect to the corresponding root paths.
+`https://daiko.nekoj.in/` is the production Daiko site. Cloudflare Tunnel forwards HTTP to `127.0.0.1:3334`. This release serves the app at `/` and redirects old `/daiko/` links to the corresponding root paths. The Docker Compose project `daiko-staging`, services `staging-api` and `staging-web`, and volume `daiko-staging_staging-data` retain their historical names. Do not replace or recreate that volume: it contains the production database and uploaded images. The older Daiko instance under `parcelhub.nekoj.in/daiko/` uses a separate dataset and is not the production site.
 
-ParcelHub remains the identity provider. Staging accepts the same account credentials, but ParcelHub's host-only session cookie is not shared between the hostnames, so users must sign in separately. Signup and password recovery remain on ParcelHub. The proxy checks the staging browser Origin before forwarding only sign-in and sign-out to ParcelHub.
+ParcelHub is the identity provider. Daiko uses the same account credentials, with a separate host-scoped browser session. The proxy validates the Daiko browser origin before forwarding sign-in and sign-out to ParcelHub. Signup and password recovery remain on ParcelHub.
 
-Run from the project directory with `DAIKO_ADMIN_EMAILS` set in a private `.env` or the shell:
+For an update, prepare a release directory with the intended source and a private `.env` containing `DAIKO_ADMIN_EMAILS`. `compose.staging.yml` is the production Compose file despite its historical name, and mounts `deploy/staging-app-nginx.conf` for the application. Validate configuration and build images before stopping any service:
 
 ```sh
 docker compose -f compose.staging.yml config --quiet
-docker compose -f compose.staging.yml up -d --build
-docker compose -f compose.staging.yml exec staging-web nginx -t
-curl -i http://127.0.0.1:3334/
-curl -i http://127.0.0.1:3334/daiko-api/session
+docker compose -f compose.staging.yml build
 ```
 
-Configure the tunnel as HTTP to `127.0.0.1:3334`; do not expose the backend port directly. Never use `down -v` on a staging environment whose data should be retained. Changing ParcelHub credentials or disabling a user also affects their staging access.
+Back up the entire production volume with the API stopped before applying migrations or replacing the service. Keep the web service running while the API is stopped, and copy backups to separate storage:
 
+```sh
+mkdir -p /root/Daiko-production-backups
+chmod 700 /root/Daiko-production-backups
+docker compose -f compose.staging.yml stop staging-api
+docker run --rm -v daiko-staging_staging-data:/source:ro -v /root/Daiko-production-backups:/backup alpine:3.20 sh -c 'tar -czf /backup/daiko-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /source .'
+docker compose -f compose.staging.yml up -d --no-build
+docker compose -f compose.staging.yml exec staging-web nginx -t
+curl -f http://127.0.0.1:3334/daiko-api/session
+```
 
-## Work-in-progress page
+If backup fails, restart the existing API container rather than applying the new release. Check the migration logs and public site after deployment. Never use `down -v` when updating this project. Changing ParcelHub credentials or disabling an account also affects production Daiko access.
 
-The staging compose file serves the application by default using
-`staging-app-nginx.conf`. To temporarily show a work-in-progress placeholder,
-change the staging web configuration mount to `staging-nginx.conf` and recreate
-the web container. The staging database remains in its separate Docker volume.
+To temporarily show a work-in-progress placeholder, change the web configuration mount to `staging-nginx.conf` and recreate the web container. The production database remains in its separate Docker volume.
