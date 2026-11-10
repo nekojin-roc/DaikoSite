@@ -6,10 +6,10 @@ import './group-management.css';
 export type GroupItem = { id: string; name: string };
 export type Group = GroupItem & { members: GroupItem[]; offerings: GroupItem[] };
 
-type Props = { groups: Group[]; onReload: () => Promise<void> };
+type Props = { groups: Group[]; onBack: () => void; onReload: () => Promise<void> };
 type Mutation = (path: string, method: 'POST' | 'PATCH' | 'DELETE', name?: string) => Promise<boolean>;
 
-export default function GroupManagement({ groups, onReload }: Props) {
+export default function GroupManagement({ groups, onBack, onReload }: Props) {
   const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addingGroup, setAddingGroup] = useState(false);
@@ -57,7 +57,7 @@ export default function GroupManagement({ groups, onReload }: Props) {
   const back = () => { setSelectedId(null); setEditingGroup(false); setError(''); };
 
   return <>
-    {selected && <button className="back" onClick={back} disabled={busy}><ArrowLeft size={16}/> {t('Manage groups')}</button>}
+    <button type="button" className="back" onClick={selected ? back : onBack} disabled={busy}><ArrowLeft size={16}/> {t(selected ? 'Manage groups' : 'Settings')}</button>
     <div className="page-heading"><h1>{selected ? selected.name : t('Manage groups')}</h1>{!selected && !addingGroup && <button className="button primary" onClick={() => setAddingGroup(true)} disabled={busy}><Plus size={16}/> {t('Add group')}</button>}</div>
     {error && <div className="alert error" role="alert">{t(error, { defaultValue: error })}<button aria-label={t('Dismiss')} onClick={() => setError('')}><X size={16}/></button></div>}
     {!selected && <>

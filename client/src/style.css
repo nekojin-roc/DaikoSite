@@ -14,21 +14,19 @@
 .create-form select{display:block;width:100%;border:1px solid #dfe5eb;border-radius:6px;padding:11px 12px;margin-top:9px;color:#26344a;background:#fff;font:inherit;font-weight:400;outline:0}.create-form select:focus{border-color:#879bb2;box-shadow:0 0 0 3px #c7d3e044}.create-form select:focus-visible{outline:3px solid #a8b9d3;outline-offset:2px}.dark .create-form select{background:#111f33;border-color:#394a62;color:#e9f0f8}.request-member{margin-top:14px;color:#8390a0;font-size:11px}.request-member strong{color:#4f6072}.request-attachment{display:block;width:fit-content;max-width:100%;margin-top:14px}.request-attachment img{display:block;max-width:min(100%,360px);max-height:280px;object-fit:contain;border-radius:6px}.dark .request-member{color:#a7b6c8}.dark .request-member strong{color:#e9f0f8}
 .queue-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.button.danger{background:#fff;border-color:#edcaca;color:#a23d3d}.button.danger:hover{background:#fff2f2}.dark .button.danger{background:#431f29;border-color:#6e3845;color:#ffd0d5}.dark .button.danger:hover{background:#5a2936}
 
-/* The event list owns the scrolling on normal-height screens; forms and other
-   views retain their regular page flow. The short-screen fallback keeps every
-   heading and navigation control reachable. */
-@media (min-height: 521px) {
-  .main-wrap.event-list-layout{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-  .event-list-layout .content{width:100%;flex:1;min-height:0;display:flex;flex-direction:column;padding-bottom:clamp(16px,4vh,40px)}
-  .event-list-layout .page-heading,.event-list-layout .section-heading,.event-list-layout .alert{flex-shrink:0}
-  .event-list-layout .event-list{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 4px 5px;margin:-2px -4px -5px}
-  .event-list-layout .event-list>*{flex-shrink:0}
-  .event-list-layout .footnote{flex-shrink:0;margin-top:16px}
-}
-@media (max-height: 520px) {
-  .event-list-layout .event-list{max-height:40vh;overflow-y:auto;overscroll-behavior:contain}
-  .event-list-layout .event-list>*{flex-shrink:0}
-}
+/* Keep the page scrollable without showing scrollbar chrome. */
+html,.mobile-nav{scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar,.mobile-nav::-webkit-scrollbar{display:none}
+/* On event screens, the app frame stays in place while the list scrolls. */
+.event-list-screen{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.event-list-screen .sidebar{min-height:0}
+.event-list-layout{height:100%;min-height:0;display:flex;flex-direction:column}
+.event-list-layout .mobile-header,.event-list-layout .mobile-nav{flex-shrink:0}
+.event-list-layout .content{width:100%;min-height:0;flex:1;display:flex;flex-direction:column;padding-bottom:0}
+.event-list-layout .page-heading,.event-list-layout .section-heading,.event-list-layout .alert{flex-shrink:0}
+.event-list-layout .event-list{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:3px 3px env(safe-area-inset-bottom,0px);scrollbar-width:none;-ms-overflow-style:none}
+.event-list-layout .event-list::-webkit-scrollbar{display:none}
+.event-list-layout .event-list>*{flex-shrink:0}
 .event-list:focus-visible{outline:3px solid #a8b9d3;outline-offset:2px;border-radius:8px}
 .request-actions{display:flex;justify-content:flex-end;margin-top:16px}
 .finished-badge{color:#337453;background:#effaf4}
@@ -73,3 +71,17 @@
 .pickles .brand-mark{width:42px;height:42px;object-fit:contain}
 .pickles .login-icon{width:68px;height:68px;object-fit:contain}
 @media(max-width:520px){.appearance-toggle button{min-width:0}}
+
+@media(max-height:520px){
+  .event-list-screen .sidebar{overflow-y:auto;scrollbar-width:none;-ms-overflow-style:none}
+  .event-list-screen .sidebar::-webkit-scrollbar{display:none}
+  .event-list-layout .content{padding-top:16px}
+  .event-list-layout .page-heading{margin-bottom:16px}
+  .event-list-layout .section-heading{margin-bottom:10px}
+}
+@media(max-width:520px){
+  .admin-event-heading{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px}
+  .admin-event-heading>div{flex:1 1 160px;min-width:0}
+  .admin-event-heading h1{font-size:clamp(20px,5.1vw,25px)}
+  .admin-event-heading>.button{flex-shrink:0}
+}
