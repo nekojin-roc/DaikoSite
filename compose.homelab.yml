@@ -23,6 +23,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.client
+      args:
+        VITE_BASE_PATH: /daiko/
     restart: unless-stopped
     depends_on: [api]
     networks:

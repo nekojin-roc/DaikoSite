@@ -4,7 +4,9 @@ import i18n, { changeLanguage, supportedLanguage, type Language } from './i18n/c
 import { appearances, useAppearance } from './Appearance';
 import GroupManagement, { type Group } from './GroupManagement';
 import MemberRequestForm from './MemberRequestForm';
+import { nextJstDay, startOfJstDay } from './event-day';
 import { version } from '../package.json';
+import { build } from '../build.json';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react';
 
 const daikoLogo = new URL('./assets/daiko-logo.jpg', import.meta.url).href;
@@ -24,11 +26,10 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 const post = <T,>(path: string, body: object = {}) => api<T>(path, { method: 'POST', body: JSON.stringify(body) });
 const date = (value: string, options: Intl.DateTimeFormatOptions) => new Date(value).toLocaleDateString(i18n.resolvedLanguage, options);
-const eventDate = (value: string) => date(value, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'});
-const time = (value: string) => new Date(value).toLocaleString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit'});
+const eventDate = (value: string) => date(value, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Tokyo'});
+const time = (value: string) => `${new Date(value).toLocaleString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Tokyo'})} JST`;
 const submitted = (value: string) => new Date(value).toLocaleString(i18n.resolvedLanguage, {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'});
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Something went wrong. Please try again.';
-const startOfToday = () => new Date().setHours(0, 0, 0, 0);
 
 function App() {
   const { t } = useTranslation();
@@ -46,7 +47,7 @@ function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [finishingId, setFinishingId] = useState<string | null>(null);
-  const [today, setToday] = useState(startOfToday);
+  const [today, setToday] = useState(startOfJstDay);
   const admin = user?.role?.toUpperCase() === 'ADMIN';
   const upcomingEvents = events.filter(event => new Date(event.startsAt).getTime() >= today);
   const pastEvents = events.filter(event => new Date(event.startsAt).getTime() < today).reverse();
@@ -61,10 +62,9 @@ function App() {
     let timer: ReturnType<typeof setTimeout>;
     const refreshDay = () => {
       clearTimeout(timer);
-      setToday(startOfToday());
-      const nextDay = new Date();
-      nextDay.setHours(24, 0, 0, 0);
-      timer = setTimeout(refreshDay, nextDay.getTime() - Date.now() + 50);
+      const now = Date.now();
+      setToday(startOfJstDay(now));
+      timer = setTimeout(refreshDay, nextJstDay(now) - now + 50);
     };
     const onVisibility = () => { if (document.visibilityState === 'visible') refreshDay(); };
     refreshDay();
@@ -117,7 +117,7 @@ function App() {
       <main className="content">
         {error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}<button aria-label={t("Dismiss")} onClick={() => setError('')}><X size={16}/></button></div>}
         {notice && <div className="alert success" role="status"><Check size={17}/>{t(notice, {defaultValue: notice})}<button aria-label={t("Dismiss")} onClick={() => setNotice('')}><X size={16}/></button></div>}
-        {view === 'events' && !selected && <><div className="page-heading"><div><h1>{t("Find your next event")}</h1></div></div><div className="section-heading"><div><h2>{t("Events")}</h2></div><span className="count">{t('eventCount', {count: events.length})}</span></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{events.length ? events.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No events yet")} text={t("Events will appear here once they’ve been added.")}/>}</div><div className="footnote"><Sparkles size={15}/> {t("A little help getting closer to your favorite moments.")}</div></>}
+        {view === 'events' && !selected && <><div className="page-heading"><div><h1>{t("Find your next event")}</h1></div></div><div className="section-heading"><div><h2>{t("Events")}</h2></div><span className="count">{t('eventCount', {count: upcomingEvents.length})}</span></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No events yet")} text={t("Events will appear here once they’ve been added.")}/>}</div></>}
         {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={async payload => {setBusy(true); setError(''); try {await post(`/daiko-api/events/${selected.id}/requests`, payload); await Promise.all([loadEvents(), loadMyRequests()]); setSelected(null); setNotice('Your request has been submitted. You can find it in My requests.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
         {view === 'requests' && <><div className="page-heading"><div><h1>{t("My requests")}</h1></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> {t("New request")}</button></div><div className="section-heading"><div><h2>{t("Request history")}</h2></div><span className="count">{t('totalCount', {count: myRequests.length})}</span></div><div className="request-list">{myRequests.length ? myRequests.map(request => <RequestCard key={request.id} request={request}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("Nothing here yet")} text={t("Once you submit a request, you’ll see it here.")}/>}</div></>}
         {admin && view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading"><div><h1>{t("Event management")}</h1></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> {t("Add event")}</button></div><div className="section-heading"><div><h2>{t("Upcoming events")}</h2></div><span className="count">{t('eventCount', {count: upcomingEvents.length})}</span></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No upcoming events")} text={t("Add an event to start receiving requests.")}/>}</div></>}
@@ -148,7 +148,7 @@ function Settings() {
     </div>
   </section><section className="panel settings-panel about-panel" aria-labelledby="about-title">
     <div className="panel-title"><h2 id="about-title">{t('About')}</h2></div>
-    <div className="settings-field"><span className="settings-label">{t('Version')}</span><span className="about-version">{version}</span></div>
+    <div className="settings-field"><span className="settings-label">{t('Version')}</span><span className="about-version">{version} ({t('Build')} {build})</span></div>
     <p className="about-copyright">{t('copyrightNotice', {year: new Date().getFullYear()})}</p>
   </section></>;
 }
@@ -256,7 +256,7 @@ function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSu
    <form className="panel create-form" onSubmit={e => {
      e.preventDefault();
      if (busy || importing) return;
-     const dateValue = new Date(String(new FormData(e.currentTarget).get('startsAt') || ''));
+     const dateValue = new Date(`${String(new FormData(e.currentTarget).get('startsAt') || '')}+09:00`);
      if (!Number.isFinite(dateValue.getTime())) return;
      onSubmit({name: name.trim(), groupId, startsAt: dateValue.toISOString(), imageUrl});
    }}>
@@ -282,7 +282,7 @@ function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSu
      <div className="panel-title"><h2>{t("Event details")}</h2></div>
      <label>{t("Event name")} <span className="required">*</span><input required maxLength={200} value={name} onChange={e => {nameEdited.current = true; nameRevision.current += 1; setName(e.target.value);}} placeholder={t("e.g. Spring Live 2026")}/></label>
      <label>{t("Group name")} <span className="required">*</span><select required value={groupId} onChange={e => setGroupId(e.target.value)}><option value="">{t("Select a group")}</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select>{groups.length === 0 && <small>{t("Add a group in Manage groups first.")}</small>}</label>
-     <label>{t("Date and time")} <span className="required">*</span><input required type="datetime-local" name="startsAt" value={startsAt} onInput={e => setStartsAt(e.currentTarget.value)}/><small>{t("Shown in your local time.")}</small></label>
+     <label>{t("Date and time")} <span className="required">*</span><input required type="datetime-local" name="startsAt" value={startsAt} onInput={e => setStartsAt(e.currentTarget.value)}/><small>{t("Use Japan Standard Time (JST).")}</small></label>
      <label>{t("Main visual URL")}<input type="url" value={manualImageUrl} onChange={e => {imageEdited.current = true; imageRevision.current += 1; setImportedImageUrl(''); setManualImageUrl(e.target.value);}} placeholder="https://example.com/event-image.jpg"/><small>{importedImageUrl ? t('Main image imported. Enter a direct image URL to replace it.') : t('Optional. Use a direct image link if you want to add your own visual.')}</small></label>
      {imageUrl && <div className="event-image-preview">
        {imageFailed ? <p className="preview"><ImageIcon size={16} aria-hidden="true"/> {t("Unable to preview this image. Check the URL or try fetching again.")}</p> : <img src={imageUrl} alt={name ? t('imageAlt', {name}) : t('Event main visual preview')} onError={() => setImageFailed(true)}/>}

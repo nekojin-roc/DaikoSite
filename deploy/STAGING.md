@@ -1,6 +1,6 @@
 # Daiko staging
 
-This configuration runs Daiko on `127.0.0.1:3334` for a Cloudflare Tunnel route at `daiko.nekoj.in`. It stores staging data in its own Docker volume, separate from production Daiko. The root URL redirects to `/daiko/`.
+This configuration runs Daiko on `127.0.0.1:3334` for a Cloudflare Tunnel route at `daiko.nekoj.in`. It stores staging data in its own Docker volume, separate from production Daiko. When the application configuration is active, the app is served at `/` and old `/daiko/` links redirect to the corresponding root paths.
 
 ParcelHub remains the identity provider. Staging accepts the same account credentials, but ParcelHub's host-only session cookie is not shared between the hostnames, so users must sign in separately. Signup and password recovery remain on ParcelHub. The proxy checks the staging browser Origin before forwarding only sign-in and sign-out to ParcelHub.
 
@@ -19,8 +19,7 @@ Configure the tunnel as HTTP to `127.0.0.1:3334`; do not expose the backend port
 
 ## Work-in-progress page
 
-The staging hostname currently serves a single-line placeholder for every path.
-The full application's previous Nginx configuration is preserved in
-`staging-app-nginx.conf`. To restore it, copy that file's contents into
-`staging-nginx.conf`, test the configuration with `nginx -t`, and reload Nginx.
-The staging application's database remains in its separate Docker volume.
+The staging compose file serves the application by default using
+`staging-app-nginx.conf`. To temporarily show a work-in-progress placeholder,
+change the staging web configuration mount to `staging-nginx.conf` and recreate
+the web container. The staging database remains in its separate Docker volume.

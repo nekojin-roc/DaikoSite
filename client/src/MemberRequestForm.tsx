@@ -135,7 +135,7 @@ export default function MemberRequestForm({ event, group, onBack, onSubmit, busy
         </>}
         <div className="form-actions"><button type="button" className="button secondary" onClick={onBack} disabled={busy}>{t('Cancel')}</button><button className="button primary" disabled={!canSubmit}>{busy ? t('Submitting…') : t('Submit request')} <ArrowRight size={16}/></button></div>
       </form>
-      <aside className="summary-card"><div className="summary-label">{t('SELECTED EVENT')}</div><div className="summary-icon"><CalendarDays size={20}/></div><h3>{event.name}</h3><p>{event.groupName}</p><div className="summary-date"><CalendarDays size={15}/>{when.toLocaleDateString(i18n.resolvedLanguage, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'})}<br/><Clock3 size={15}/>{when.toLocaleTimeString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit'})}</div></aside>
+      <aside className="summary-card"><div className="summary-label">{t('SELECTED EVENT')}</div><div className="summary-icon"><CalendarDays size={20}/></div><h3>{event.name}</h3><p>{event.groupName}</p><div className="summary-date"><CalendarDays size={15}/>{when.toLocaleDateString(i18n.resolvedLanguage, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Tokyo'})}<br/><Clock3 size={15}/>{when.toLocaleTimeString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Tokyo'})} JST</div></aside>
     </div>
   </>;
 }
