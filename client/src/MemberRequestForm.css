@@ -8,3 +8,8 @@
 .dark .request-form select{background:#111f33;border-color:#394a62;color:#e9f0f8}
 .dark .member-request-notice{background:#1b2a3f;color:#c5d2e1}
 .dark .member-request-kind legend{color:#e9f0f8}
+.pickles .request-form select{background:#fffdf7;border-color:#d7cbb6;color:#503226}
+.pickles .request-form select:focus{border-color:#789b4b;box-shadow:0 0 0 3px #c2e18780}
+.pickles .request-form select:focus-visible,.pickles .member-request-kind .type-option:focus-visible{outline-color:#789b4b}
+.pickles .member-request-notice{background:#f5f8e5;color:#654b3c}
+.pickles .member-request-kind legend{color:#503226}

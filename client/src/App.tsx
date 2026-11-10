@@ -10,6 +10,12 @@ import { build } from '../build.json';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react';
 
 const daikoLogo = new URL('./assets/daiko-logo.jpg', import.meta.url).href;
+const picklesLogo = new URL('./assets/pickles.png', import.meta.url).href;
+
+function BrandLogo({className}: {className: string}) {
+  const { appearance } = useAppearance();
+  return <img className={className} src={appearance === 'pickles' ? picklesLogo : daikoLogo} alt=""/>;
+}
 
 type User = { id: string; name: string; email: string; role: string };
 type Event = { id: string; name: string; groupName: string; groupId: string | null; startsAt: string; imageUrl: string | null; requestCount: number };
@@ -103,7 +109,7 @@ function App() {
   if (!user) return <Login onSubmit={signIn} busy={busy} error={error}/>;
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><img className="brand-mark" src={daikoLogo} alt=""/><span>Daiko</span></div>
+      <div className="brand"><BrandLogo className="brand-mark"/><span>Daiko</span></div>
       <div className="nav-label">{admin ? t('MANAGE') : t('YOUR SPACE')}</div>
       <nav className="navigation" aria-label={t("Main navigation")}>
         {admin ? <><button className={view === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('admin')}><Layers3 size={17}/> {t("Event management")}</button><button className={view === 'past' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('past')}><History size={17}/> {t("Past events")}</button><button className={view === 'groups' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('groups')}><UsersRound size={17}/> {t('Manage groups')}</button></> : <><button className={view === 'events' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('events')}><CalendarDays size={17}/> {t("Events")}</button><button className={view === 'requests' ? 'nav-item active' : 'nav-item'} onClick={() => navigate('requests')}><ClipboardList size={17}/> {t("My requests")}</button></>}
@@ -112,7 +118,7 @@ function App() {
       <div className="sidebar-bottom"><div className="profile"><span className="avatar">{(user.name || user.email).slice(0,1).toUpperCase()}</span><span className="profile-text"><strong>{user.name}</strong><small>{user.email}</small></span></div><button className="signout" onClick={signOut} disabled={busy}><LogOut size={16}/> {t("Sign out")}</button></div>
     </aside>
     <div className={eventListView ? "main-wrap event-list-layout" : "main-wrap"}>
-      <header className="mobile-header"><div className="brand"><img className="brand-mark" src={daikoLogo} alt=""/>Daiko</div><button className="icon-button" aria-label={t("Sign out")} title={t("Sign out")} onClick={signOut}><LogOut size={18}/></button></header>
+      <header className="mobile-header"><div className="brand"><BrandLogo className="brand-mark"/>Daiko</div><button className="icon-button" aria-label={t("Sign out")} title={t("Sign out")} onClick={signOut}><LogOut size={18}/></button></header>
       <div className="mobile-nav">{admin ? <><button className={view === 'admin' ? 'active' : ''} onClick={() => navigate('admin')}>{t("Manage")}</button><button className={view === 'past' ? 'active' : ''} onClick={() => navigate('past')}>{t("Past events")}</button><button className={view === 'groups' ? 'active' : ''} onClick={() => navigate('groups')}>{t('Groups')}</button></> : <><button className={view === 'events' ? 'active' : ''} onClick={() => navigate('events')}>{t("Events")}</button><button className={view === 'requests' ? 'active' : ''} onClick={() => navigate('requests')}>{t("My requests")}</button></>}<button className={view === 'settings' ? 'active' : ''} onClick={() => navigate('settings')}>{t('Settings')}</button></div>
       <main className="content">
         {error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}<button aria-label={t("Dismiss")} onClick={() => setError('')}><X size={16}/></button></div>}
@@ -135,7 +141,7 @@ function App() {
 function Settings() {
   const { t, i18n: currentI18n } = useTranslation();
   const { appearance, setAppearance } = useAppearance();
-  const labels = {auto: 'Auto', dark: 'Dark', bright: 'Bright'} as const;
+  const labels = {auto: 'Auto', dark: 'Dark', bright: 'Bright', pickles: 'Pickles'} as const;
   return <><div className="page-heading"><h1>{t('Settings')}</h1></div><section className="panel settings-panel" aria-labelledby="preferences-title">
     <div className="panel-title"><h2 id="preferences-title">{t('Preferences')}</h2></div>
     <div className="settings-field"><div><label htmlFor="preferred-language">{t('Language')}</label><p>{t('Language and appearance are saved in this browser.')}</p></div>
@@ -156,7 +162,7 @@ function Settings() {
 function Login({onSubmit, busy, error}: {onSubmit: (email: string, password: string) => void; busy: boolean; error: string}) {
   const { t } = useTranslation();
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  return <main className="login-page"><div className="login-card"><img className="login-icon" src={daikoLogo} alt=""/><h1>{t("Login")}</h1>{error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}</div>}<form onSubmit={e => {e.preventDefault(); onSubmit(email, password);}}><label>{t("Email")}<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"/></label><label>{t("Password")}<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t("Enter your password")}/></label><button className="button primary full" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')} <ArrowRight size={16}/></button></form><div className="login-divider"/><p className="login-help">{t("Use your ParcelHub account to sign in.")}<br/><a href={window.location.hostname === 'localhost' ? 'http://localhost:5173/auth' : 'https://parcelhub.nekoj.in/auth'}>{t("Create an account or manage your password")} <ArrowRight size={13}/></a></p></div></main>;
+  return <main className="login-page"><div className="login-card"><BrandLogo className="login-icon"/><h1>{t("Login")}</h1>{error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}</div>}<form onSubmit={e => {e.preventDefault(); onSubmit(email, password);}}><label>{t("Email")}<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"/></label><label>{t("Password")}<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t("Enter your password")}/></label><button className="button primary full" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')} <ArrowRight size={16}/></button></form><div className="login-divider"/><p className="login-help">{t("Use your ParcelHub account to sign in.")}<br/><a href={window.location.hostname === 'localhost' ? 'http://localhost:5173/auth' : 'https://parcelhub.nekoj.in/auth'}>{t("Create an account or manage your password")} <ArrowRight size={13}/></a></p></div></main>;
 }
 function EventCard({event, onClick, admin = false}: {event: Event; onClick: () => void; admin?: boolean}) {
   const { t } = useTranslation();

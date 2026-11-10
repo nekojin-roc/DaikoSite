@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 
-export const appearances = ['auto', 'dark', 'bright'] as const;
+export const appearances = ['auto', 'dark', 'bright', 'pickles'] as const;
 export type Appearance = typeof appearances[number];
 const key = 'parcelhub.appearance';
 const isAppearance = (value: unknown): value is Appearance => appearances.some(item => item === value);
@@ -15,6 +15,7 @@ export function AppearanceProvider({children}: {children: ReactNode}) {
     const apply = () => {
       const dark = appearance === 'dark' || (appearance === 'auto' && system.matches);
       document.documentElement.classList.toggle('dark', dark);
+      document.documentElement.classList.toggle('pickles', appearance === 'pickles');
       document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
       document.documentElement.dataset.appearance = appearance;
     };

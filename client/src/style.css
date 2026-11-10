@@ -33,3 +33,43 @@
 .request-actions{display:flex;justify-content:flex-end;margin-top:16px}
 .finished-badge{color:#337453;background:#effaf4}
 .dark .finished-badge{color:#b6f3d1;background:#143b35}
+
+/* Pickles Original: the character's green with warm cream, cocoa and coral. */
+.pickles,.pickles body,.pickles .main-wrap{background:#fff9ed;color:#503226}
+.pickles .sidebar,.pickles .login-page{background:#f5f8e5;border-color:#d8d6b9}
+.pickles .brand,.pickles h1,.pickles h2,.pickles h3,.pickles .event-card{color:#503226}
+.pickles .nav-label,.pickles .profile-text small,.pickles .event-info p,.pickles .event-date,.pickles .field-help,.pickles .settings-field p,.pickles .panel label small,.pickles .footnote,.pickles .loading,.pickles .loading-inline{color:#765e4e}
+.pickles .nav-item,.pickles .signout,.pickles .icon-button,.pickles .mobile-nav button,.pickles .back{color:#614637}
+.pickles .nav-item:hover,.pickles .nav-item.active,.pickles .mobile-nav button.active{background:#c2e187;color:#503226}
+.pickles .sidebar-bottom,.pickles .mobile-header,.pickles .mobile-nav,.pickles .form-actions,.pickles .event-import,.pickles .settings-field,.pickles .summary-date,.pickles .about-copyright{border-color:#e4dbc7}
+.pickles .avatar,.pickles .type-icon,.pickles .summary-icon,.pickles .empty-icon{background:#e4efca;color:#503226}
+.pickles .event-card,.pickles .panel,.pickles .summary-card,.pickles .request-card,.pickles .login-card,.pickles .event-image-preview{background:#fffdf7;border-color:#e4dbc7;color:#503226}
+.pickles .event-card:hover{border-color:#9fbc70;box-shadow:0 5px 18px #50322618}
+.pickles .panel label,.pickles .login-card label,.pickles .settings-label,.pickles .empty h3{color:#503226}
+.pickles .count,.pickles input,.pickles textarea,.pickles .settings-field select,.pickles .create-form select,.pickles .button.secondary{background:#fffdf7;border-color:#d7cbb6;color:#503226}
+.pickles input::placeholder,.pickles textarea::placeholder{color:#816d60}
+.pickles input:focus,.pickles textarea:focus,.pickles .create-form select:focus{border-color:#789b4b;box-shadow:0 0 0 3px #c2e18780}
+.pickles button:focus-visible,.pickles a:focus-visible,.pickles input:focus-visible,.pickles textarea:focus-visible,.pickles select:focus-visible,.pickles .event-list:focus-visible{outline-color:#789b4b}
+.pickles .button.primary{background:#f2876f;color:#503226}
+.pickles .button.primary:hover{background:#ed9a86}
+.pickles .button.secondary:hover{background:#f5f8e5}
+.pickles .type-option{background:#fffdf7;border-color:#e4dbc7;color:#503226}
+.pickles .type-option.selected{background:#edf6da;border-color:#87a95a}
+.pickles .type-option small,.pickles .summary-label,.pickles .summary-card p,.pickles .summary-date,.pickles .amount,.pickles .position,.pickles .request-top time,.pickles .request-subtitle{color:#765e4e}
+.pickles .radio{border-color:#a99580}.pickles .selected .radio{border-color:#503226}
+.pickles .badge,.pickles .queue-count,.pickles .finished-badge{background:#e4efca;color:#503226}
+.pickles .request-message,.pickles .request-user,.pickles .request-user strong,.pickles .request-member,.pickles .request-member strong,.pickles .preview,.pickles .preview-caption,.pickles .text-button,.pickles .event-action,.pickles .event-action svg{color:#654b3c}
+.pickles .empty{border-color:#d7cbb6;color:#765e4e}
+.pickles .empty p,.pickles .login-card>p,.pickles .login-card .login-help,.pickles .login-footer,.pickles .about-version,.pickles .about-copyright{color:#765e4e}
+.pickles .login-help a{color:#503226}.pickles .login-divider{background:#e4dbc7}
+.pickles .event-image{background:#e4efca}.pickles .image-placeholder{background:linear-gradient(135deg,#e4efca,#f5f8e5);color:#654b3c}
+.pickles .appearance-toggle{background:#e4efca}.pickles .appearance-toggle button{color:#614637}.pickles .appearance-toggle button.selected{background:#fffdf7;color:#503226}
+.pickles .import-status{background:#f5f8e5;color:#654b3c}
+.pickles .alert.error,.pickles .import-status.error{background:#ffebe5;border-color:#efb5a4;color:#843323}
+.pickles .alert.success,.pickles .import-status.success{background:#e4efca;border-color:#c2d8a1;color:#38552c}
+.pickles .button.danger{background:#fffdf7;border-color:#e9b4a5;color:#843323}.pickles .button.danger:hover{background:#ffebe5}
+.pickles .spinner{border-color:#d8d6b9;border-top-color:#503226}
+.pickles .required{color:#a23f2d}
+.pickles .brand-mark{width:42px;height:42px;object-fit:contain}
+.pickles .login-icon{width:68px;height:68px;object-fit:contain}
+@media(max-width:520px){.appearance-toggle button{min-width:0}}
