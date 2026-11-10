@@ -72,6 +72,11 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
   };
   app.get("/api/health", async () => ({ status: "ok" }));
   app.get("/api/session", async request => ({ user: request.daikoUser }));
+  app.get("/api/build", { preHandler: auth }, async (_request, reply) => {
+    const counter = await options.prisma.buildCounter.findUnique({ where: { id: 1 }, select: { value: true } });
+    if (!counter) return reply.code(503).send({ error: "Build number unavailable" });
+    return { build: counter.value };
+  });
   app.get("/api/groups", { preHandler: auth }, async () => ({
     groups: await options.prisma.group.findMany({
       select: { id: true, name: true, members: { select: { id: true, name: true }, orderBy: { name: "asc" } }, offerings: { where: { archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } } },

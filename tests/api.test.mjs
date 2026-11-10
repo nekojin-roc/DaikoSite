@@ -26,6 +26,11 @@ test('authorized workflows, validation, ordering and persistence', async () => {
   const call = (method, url, cookie, payload, origin = ORIGIN) => app.inject({ method, url, headers: { ...(cookie ? { cookie } : {}), ...(method === 'POST' ? { origin } : {}) }, ...(payload !== undefined ? { payload } : {}) });
   try {
     assert.deepEqual((await call('GET', '/api/session')).json(), { user: null });
+    assert.equal((await call('GET', '/api/build')).statusCode, 401);
+    assert.deepEqual((await call('GET', '/api/build', 'sid=user')).json(), { build: 8 });
+    assert.deepEqual((await call('GET', '/api/build', 'sid=admin')).json(), { build: 8 });
+    await prisma.buildCounter.update({ where: { id: 1 }, data: { value: 9 } });
+    assert.deepEqual((await call('GET', '/api/build', 'sid=user')).json(), { build: 9 });
     assert.equal((await call('GET', '/api/events')).statusCode, 401);
     assert.equal((await call('POST', '/api/events', 'sid=user', {})).statusCode, 403);
     const event = { name: 'Live', groupName: 'Idol', startsAt: '2027-04-10T10:00:00.000Z', imageUrl: '' };

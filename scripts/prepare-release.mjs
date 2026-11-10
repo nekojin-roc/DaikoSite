@@ -1,12 +1,24 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-function git(args, message) {
+// Executed inside the running API container, with its existing SQLite volume.
+// One SQL statement makes concurrent increments atomic. A missing migration or
+// seed row is an error: never silently create or reset a production counter.
+export const incrementProgram = `
+const { PrismaClient } = require('@prisma/client');
+const db = new PrismaClient();
+(async () => {
+  await db.$queryRawUnsafe('PRAGMA busy_timeout = 5000');
+  const rows = await db.$queryRawUnsafe('UPDATE "BuildCounter" SET "value" = "value" + 1 WHERE "id" = 1 RETURNING "value"');
+  if (rows.length !== 1) throw new Error('Build counter row is missing');
+  console.log(String(rows[0].value));
+})().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => db.$disconnect());
+`;
+
+function runGit(args, cwd, message) {
   try {
     return execFileSync('git', args, {
-      encoding: 'utf8',
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      cwd, encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
   } catch {
@@ -14,36 +26,53 @@ function git(args, message) {
   }
 }
 
-try {
-  const root = git(['rev-parse', '--show-toplevel'], 'Run this command inside the Daiko Git checkout.');
-  process.chdir(root);
-  const branch = git(['branch', '--show-current'], 'Unable to determine the current Git branch.');
-  if (branch !== 'main') throw new Error('Switch to the local main branch before preparing a release.');
-
-  git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'],
-    'Could not fetch origin/main. Check your GitHub connection and credentials.');
-  const remoteHead = git(['rev-parse', 'refs/remotes/origin/main'], 'Could not read origin/main.');
-  const localHead = git(['rev-parse', 'HEAD'], 'Could not read the current commit.');
-  if (localHead !== remoteHead) {
-    throw new Error('Local main must match GitHub origin/main. Publish or update your branch before preparing a release.');
+export function incrementHostCounter({ host, container, sshKey }) {
+  // SSH constructs a command for a remote shell. Only allow ordinary host and
+  // container identifiers, and pass program text on stdin rather than quoting it.
+  if (!host || !/^[A-Za-z0-9][A-Za-z0-9_.@:-]*$/.test(host)) {
+    throw new Error('Set DAIKO_RELEASE_HOST to the production SSH destination (for example, user@hostname).');
   }
-  if (git(['status', '--porcelain', '--', 'client/build.json'], 'Could not check client/build.json.')) {
-    throw new Error('client/build.json has uncommitted changes. Commit or restore them before preparing a release.');
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(container)) {
+    throw new Error('DAIKO_RELEASE_CONTAINER must be a valid Docker container name.');
   }
-
-  const remoteText = git(['show', 'refs/remotes/origin/main:client/build.json'], 'GitHub origin/main has no client/build.json.');
-  const remote = JSON.parse(remoteText);
-  if (!Number.isSafeInteger(remote.build) || remote.build < 0 || remote.build >= Number.MAX_SAFE_INTEGER) {
-    throw new Error('GitHub client/build.json must contain a non-negative safe integer build number.');
+  try {
+    const output = execFileSync('ssh', [
+      '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', ...(sshKey ? ['-o', 'IdentitiesOnly=yes', '-i', sshKey] : []), host,
+      'docker', 'exec', '-i', container, 'node',
+    ], { encoding: 'utf8', input: incrementProgram, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    if (!/^\d+$/.test(output) || !Number.isSafeInteger(Number(output)) || Number(output) < 1) {
+      throw new Error('The host did not return a valid build number. Check the host before retrying.');
+    }
+    return Number(output);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('The host did not return')) throw error;
+    throw new Error('Could not increment the host counter. Verify SSH access, the API container, and its database migration. The counter may have advanced if the connection failed; check before retrying.');
   }
-  const file = path.join(root, 'client', 'build.json');
-  const local = JSON.parse(readFileSync(file, 'utf8'));
-  if (local.build !== remote.build) throw new Error('Local build number does not match GitHub origin/main.');
+}
 
-  remote.build += 1;
-  writeFileSync(file, `${JSON.stringify(remote, null, 2)}\n`, 'utf8');
-  console.log(`Prepared build ${remote.build} from GitHub origin/main. Commit and push this change with your release.`);
-} catch (error) {
-  console.error(`Release preparation failed: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+export function prepareRelease({ cwd = process.cwd(), env = process.env, increment = incrementHostCounter } = {}) {
+  const root = runGit(['rev-parse', '--show-toplevel'], cwd, 'Run this command inside the Daiko Git checkout.');
+  const branch = runGit(['branch', '--show-current'], root, 'Unable to determine the current Git branch.');
+  if (branch !== 'main') throw new Error('Switch to local main before preparing a release.');
+  runGit(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], root,
+    'Could not fetch GitHub origin/main. Check your connection and credentials.');
+  const remoteHead = runGit(['rev-parse', 'refs/remotes/origin/main'], root, 'Could not read origin/main.');
+  const localHead = runGit(['rev-parse', 'HEAD'], root, 'Could not read the current commit.');
+  if (localHead !== remoteHead) throw new Error('Local main must match GitHub origin/main before preparing a release.');
+  if (runGit(['status', '--porcelain'], root, 'Could not check the working tree.')) {
+    throw new Error('Commit, push, or otherwise clear local changes before preparing a release.');
+  }
+  const build = increment({ host: env.DAIKO_RELEASE_HOST, container: env.DAIKO_RELEASE_CONTAINER || 'daiko-staging-staging-api-1', sshKey: env.DAIKO_RELEASE_SSH_KEY });
+  return { build, commit: remoteHead };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    const { build, commit } = prepareRelease();
+    console.log(`Prepared build ${build} on the production host from GitHub commit ${commit}.`);
+    console.log('The counter is updated immediately, even if you do not deploy afterwards.');
+  } catch (error) {
+    console.error(`Release preparation failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 }

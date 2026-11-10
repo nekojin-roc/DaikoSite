@@ -1,17 +1,13 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { PrismaClient } from '@prisma/client';
+import { incrementHostCounter, incrementProgram, prepareRelease } from '../scripts/prepare-release.mjs';
 
-const script = fileURLToPath(new URL('../scripts/prepare-release.mjs', import.meta.url));
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
-const prepare = cwd => spawnSync(process.execPath, [script], { cwd, encoding: 'utf8' });
-const buildFile = cwd => path.join(cwd, 'client', 'build.json');
-const build = cwd => JSON.parse(readFileSync(buildFile(cwd), 'utf8')).build;
-const setBuild = (cwd, value) => writeFileSync(buildFile(cwd), `${JSON.stringify({ build: value }, null, 2)}\n`);
 function identity(cwd) {
   git(cwd, 'config', 'user.name', 'Release Test');
   git(cwd, 'config', 'user.email', 'release-test@example.invalid');
@@ -25,63 +21,75 @@ function fixture(t) {
   mkdirSync(local);
   git(local, 'init', '--initial-branch=main');
   identity(local);
-  mkdirSync(path.join(local, 'client'));
-  setBuild(local, 8);
-  git(local, 'add', 'client/build.json');
-  git(local, 'commit', '-m', 'Release 8');
+  writeFileSync(path.join(local, 'source.txt'), 'release');
+  git(local, 'add', 'source.txt');
+  git(local, 'commit', '-m', 'Source');
   git(local, 'remote', 'add', 'origin', remote);
   git(local, 'push', '-u', 'origin', 'main');
   return { dir, remote, local };
 }
+const env = { DAIKO_RELEASE_HOST: 'test@example.invalid', DAIKO_RELEASE_SSH_KEY: 'identity' };
 
-test('prepares the next GitHub build once without touching unrelated changes', t => {
+test('reads the GitHub commit and increments the host on every invocation', t => {
   const { local } = fixture(t);
-  writeFileSync(path.join(local, 'feature.txt'), 'work in progress');
-  const first = prepare(local);
-  assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /Prepared build 9/);
-  assert.equal(build(local), 9);
-  const repeat = prepare(local);
-  assert.notEqual(repeat.status, 0);
-  assert.match(repeat.stderr, /uncommitted changes/);
-  assert.equal(build(local), 9);
+  let value = 8;
+  const increment = options => {
+    assert.deepEqual(options, { host: env.DAIKO_RELEASE_HOST, container: 'daiko-staging-staging-api-1', sshKey: 'identity' });
+    return ++value;
+  };
+  const first = prepareRelease({ cwd: local, env, increment });
+  assert.equal(first.commit, git(local, 'rev-parse', 'HEAD'));
+  assert.equal(first.build, 9);
+  assert.equal(prepareRelease({ cwd: local, env, increment }).build, 10);
+  assert.equal(git(local, 'status', '--porcelain'), '');
 });
 
-test('refuses a dirty build file and keeps its existing number', t => {
-  const { local } = fixture(t);
-  setBuild(local, 10);
-  const result = prepare(local);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /uncommitted changes/);
-  assert.equal(build(local), 10);
-});
-
-test('fetches GitHub first and refuses to advance an out-of-date branch', t => {
+test('never increments when the checkout is dirty, ahead, or behind GitHub', t => {
   const { dir, remote, local } = fixture(t);
+  let calls = 0;
+  const options = { cwd: local, env, increment: () => { calls++; return 9; } };
+  writeFileSync(path.join(local, 'untracked.txt'), 'change');
+  assert.throws(() => prepareRelease(options), /clear local changes/);
+  rmSync(path.join(local, 'untracked.txt'));
   const other = path.join(dir, 'other');
   git(dir, 'clone', remote, other);
   identity(other);
-  setBuild(other, 9);
-  git(other, 'add', 'client/build.json');
-  git(other, 'commit', '-m', 'Release 9');
+  writeFileSync(path.join(other, 'source.txt'), 'new source');
+  git(other, 'add', 'source.txt');
+  git(other, 'commit', '-m', 'Next source');
   git(other, 'push', 'origin', 'main');
-  const stale = prepare(local);
-  assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, /must match GitHub origin\/main/);
-  assert.equal(build(local), 8);
+  assert.throws(() => prepareRelease(options), /must match GitHub/);
   git(local, 'pull', '--ff-only', 'origin', 'main');
-  const fresh = prepare(local);
-  assert.equal(fresh.status, 0, fresh.stderr);
-  assert.equal(build(local), 10);
+  writeFileSync(path.join(local, 'source.txt'), 'unpublished');
+  git(local, 'add', 'source.txt');
+  git(local, 'commit', '-m', 'Ahead');
+  assert.throws(() => prepareRelease(options), /must match GitHub/);
+  assert.equal(calls, 0);
 });
 
-test('refuses unpublished local commits and leaves the build unchanged', t => {
-  const { local } = fixture(t);
-  writeFileSync(path.join(local, 'feature.txt'), 'committed but not pushed');
-  git(local, 'add', 'feature.txt');
-  git(local, 'commit', '-m', 'Unpublished work');
-  const result = prepare(local);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /must match GitHub origin\/main/);
-  assert.equal(build(local), 8);
+test('rejects unsafe host and container identifiers before SSH', () => {
+  assert.throws(() => incrementHostCounter({ host: '-bad', container: 'api' }), /DAIKO_RELEASE_HOST/);
+  assert.throws(() => incrementHostCounter({ host: 'admin@host', container: 'api;false' }), /DAIKO_RELEASE_CONTAINER/);
+});
+
+test('host SQL assigns unique numbers under concurrent SQLite updates', async t => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'daiko-counter-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const url = `file:${path.join(dir, 'counter.db').replaceAll('\\', '/')}`;
+  const db = new PrismaClient({ datasourceUrl: url });
+  try {
+    await db.$executeRawUnsafe('CREATE TABLE "BuildCounter" ("id" INTEGER NOT NULL PRIMARY KEY, "value" INTEGER NOT NULL)');
+    await db.$executeRawUnsafe('INSERT INTO "BuildCounter" ("id", "value") VALUES (1, 8)');
+  } finally { await db.$disconnect(); }
+  const run = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', incrementProgram], {
+      cwd: path.resolve(import.meta.dirname, '..'), env: { ...process.env, DATABASE_URL: url },
+    });
+    let out = '', err = '';
+    child.stdout.on('data', chunk => { out += chunk; });
+    child.stderr.on('data', chunk => { err += chunk; });
+    child.on('error', reject);
+    child.on('close', code => code === 0 ? resolve(Number(out.trim())) : reject(new Error(err)));
+  });
+  assert.deepEqual((await Promise.all([run(), run(), run(), run()])).sort((a,b) => a-b), [9,10,11,12]);
 });

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// A single host-owned release counter. Deployment tooling increments row 1.
+model BuildCounter {
+  id    Int @id
+  value Int
+}
+
 model Group {
   id        String @id @default(cuid())
   name      String @unique

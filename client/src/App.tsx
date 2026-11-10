@@ -6,7 +6,6 @@ import GroupManagement, { type Group } from './GroupManagement';
 import MemberRequestForm from './MemberRequestForm';
 import { nextJstDay, startOfJstDay } from './event-day';
 import { version } from '../package.json';
-import { build } from '../build.json';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react';
 
 const daikoLogo = new URL('./assets/daiko-logo.jpg', import.meta.url).href;
@@ -141,6 +140,16 @@ function App() {
 function Settings({onManageGroups}: {onManageGroups?: () => void}) {
   const { t, i18n: currentI18n } = useTranslation();
   const { appearance, setAppearance } = useAppearance();
+  const [build, setBuild] = useState<number | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{build: number}>('/daiko-api/build', {signal: controller.signal, cache: 'no-store'})
+      .then(result => {
+        if (Number.isSafeInteger(result.build) && result.build >= 0) setBuild(result.build);
+      })
+      .catch(() => { /* Keep the build number unavailable if the API cannot be reached. */ });
+    return () => controller.abort();
+  }, []);
   const labels = {auto: 'Auto', dark: 'Dark', bright: 'Bright', pickles: 'Pickles'} as const;
   return <><div className="page-heading"><h1>{t('Settings')}</h1></div><section className="panel settings-panel" aria-labelledby="preferences-title">
     <div className="panel-title"><h2 id="preferences-title">{t('Preferences')}</h2></div>
@@ -154,7 +163,7 @@ function Settings({onManageGroups}: {onManageGroups?: () => void}) {
     </div>
   </section>{onManageGroups && <section className="panel settings-panel about-panel" aria-labelledby="groups-title"><div className="panel-title"><h2 id="groups-title">{t('Groups')}</h2></div><button type="button" className="button secondary" onClick={onManageGroups}><UsersRound size={16}/> {t('Manage groups')}</button></section>}<section className="panel settings-panel about-panel" aria-labelledby="about-title">
     <div className="panel-title"><h2 id="about-title">{t('About')}</h2></div>
-    <div className="settings-field"><span className="settings-label">{t('Version')}</span><span className="about-version">{version} ({t('Build')} {build})</span></div>
+    <div className="settings-field"><span className="settings-label">{t('Version')}</span><span className="about-version">{version} ({t('Build')} {build ?? '—'})</span></div>
     <p className="about-copyright">{t('copyrightNotice', {year: new Date().getFullYear()})}</p>
   </section></>;
 }
