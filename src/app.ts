@@ -128,7 +128,14 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     if (!result.count) return reply.code(404).send({ error: "Offering not found" });
     return reply.code(204).send();
   });
-  app.get("/api/events", { preHandler: auth }, async () => ({ events: (await options.prisma.event.findMany({ select: eventSelect, orderBy: [{ startsAt: "asc" }, { id: "asc" }] })).map(eventView) }));
+  app.get("/api/events", { preHandler: auth }, async () => {
+    const [events, counts] = await Promise.all([
+      options.prisma.event.findMany({ select: eventSelect, orderBy: [{ startsAt: "asc" }, { id: "asc" }] }),
+      options.prisma.request.groupBy({ by: ["eventId"], _count: { _all: true } }),
+    ]);
+    const totals = new Map(counts.map(count => [count.eventId, count._count._all]));
+    return { events: events.map(event => ({ ...eventView(event), totalRequestCount: totals.get(event.id) ?? 0 })) };
+  });
   app.post("/api/events/import", { preHandler: admin }, async request => {
     const { url } = z.object({ url: z.string().trim().min(1).max(2048) }).strict().parse(request.body);
     const imported = await importEvent(url);
@@ -148,7 +155,7 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     const group = input.groupId ? await options.prisma.group.findUnique({ where: { id: input.groupId } }) : null;
     if (input.groupId && !group) return reply.code(404).send({ error: "Group not found" });
     const event = await options.prisma.event.create({ data: { name: input.name, groupId: group?.id ?? null, groupName: group?.name ?? input.groupName!, startsAt: new Date(input.startsAt), imageUrl: input.imageUrl || null }, select: eventSelect });
-    return reply.code(201).send(eventView(event));
+    return reply.code(201).send({ ...eventView(event), totalRequestCount: 0 });
   });
   app.delete<{ Params: { id: string } }>("/api/events/:id", { preHandler: admin }, async (request, reply) => {
     // Delete the event and its queue together. Imported event images are

@@ -33,6 +33,7 @@ test('goods appear first and finishing a request preserves its history', async (
     assert.equal((await call('GET', '/api/events/missing/requests/completed', 'admin')).statusCode, 404);
     assert.deepEqual((await call('GET', completedUrl, 'admin')).json().requests, []);
     assert.equal((await call('GET', '/api/events', 'fan')).json().events[0].requestCount, 3);
+    assert.equal((await call('GET', '/api/events', 'fan')).json().events[0].totalRequestCount, 3);
     const finish = `/api/requests/${goods.id}/finish`;
     assert.equal((await call('POST', finish)).statusCode, 401);
     assert.equal((await call('POST', finish, 'fan')).statusCode, 403);
@@ -45,6 +46,7 @@ test('goods appear first and finishing a request preserves its history', async (
     assert.equal((await prisma.request.findUnique({ where: { id: goods.id } })).finishedAt.getTime(), finishedAt.getTime());
     assert.deepEqual((await call('GET', url, 'admin')).json().requests.map(r => r.id), [later.id, cheki.id]);
     assert.equal((await call('GET', '/api/events', 'fan')).json().events[0].requestCount, 2);
+    assert.equal((await call('GET', '/api/events', 'fan')).json().events[0].totalRequestCount, 3);
     const history = (await call('GET', '/api/my-requests', 'fan')).json().requests;
     assert.equal(history.length, 2);
     assert.equal(history.find(r => r.id === goods.id).finishedAt, finishedAt.toISOString());
@@ -63,6 +65,11 @@ test('goods appear first and finishing a request preserves its history', async (
     const pastRequest = (await call('POST', pastUrl, 'fan', { type: 'GOODS', message: 'Earlier event' })).json();
     assert.equal((await call('POST', `/api/requests/${pastRequest.id}/finish`, 'admin')).statusCode, 204);
     assert.deepEqual((await call('GET', `${pastUrl}/completed`, 'admin')).json().requests.map(r => r.id), [pastRequest.id]);
+    const eventCounts = (await call('GET', '/api/events', 'admin')).json().events;
+    assert.deepEqual(eventCounts.map(({ id, requestCount, totalRequestCount }) => ({ id, requestCount, totalRequestCount })), [
+      { id: past.id, requestCount: 0, totalRequestCount: 1 },
+      { id: event.id, requestCount: 2, totalRequestCount: 3 },
+    ]);
     assert.equal((await call('POST', `/api/requests/${cheki.id}/finish`, 'admin')).statusCode, 204);
     await prisma.request.update({ where: { id: cheki.id }, data: { finishedAt: new Date('2020-01-01T00:00:00Z') } });
     assert.deepEqual((await call('GET', completedUrl, 'admin')).json().requests.map(r => r.id), [cheki.id, goods.id]);

@@ -2,7 +2,7 @@
 
 `https://daiko.nekoj.in/` is the production Daiko site. Cloudflare Tunnel forwards HTTP to `127.0.0.1:3334`. This release serves the app at `/` and redirects old `/daiko/` links to the corresponding root paths. The Docker Compose project `daiko-staging`, services `staging-api` and `staging-web`, and volume `daiko-staging_staging-data` retain their historical names. Do not replace or recreate that volume: it contains the production database and uploaded images. The older Daiko instance under `parcelhub.nekoj.in/daiko/` uses a separate dataset and is not the production site.
 
-ParcelHub is the identity provider. Daiko uses the same account credentials, with a separate host-scoped browser session. The proxy validates the Daiko browser origin before forwarding sign-in and sign-out to ParcelHub. Signup and password recovery remain on ParcelHub.
+ParcelHub is the identity provider. Daiko uses the same account credentials, with a separate host-scoped browser session. After registration, ParcelHub establishes the Daiko session through the sign-in proxy before returning the user. The proxy accepts sign-in only from the Daiko and ParcelHub browser origins, and sign-out only from Daiko. Signup and password recovery remain on ParcelHub.
 
 For an update, prepare a release directory with the intended source and a private `.env` containing `DAIKO_ADMIN_EMAILS`. `compose.staging.yml` is the production Compose file despite its historical name, and mounts `deploy/staging-app-nginx.conf` for the application. Validate configuration and build images before stopping any service:
 
