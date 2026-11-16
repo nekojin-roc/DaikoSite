@@ -183,6 +183,15 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     items.sort((a, b) => Number(b.type === "GOODS") - Number(a.type === "GOODS"));
     return { requests: items.map(requestView) };
   });
+  app.get<{ Params: { id: string } }>("/api/events/:id/requests/completed", { preHandler: admin }, async (request, reply) => {
+    const event = await options.prisma.event.findUnique({ where: { id: request.params.id }, select: { id: true } });
+    if (!event) return reply.code(404).send({ error: "Event not found" });
+    const items = await options.prisma.request.findMany({
+      where: { eventId: event.id, finishedAt: { not: null } },
+      orderBy: [{ finishedAt: "asc" }, { sequence: "asc" }],
+    });
+    return { requests: items.map(requestView) };
+  });
   app.post<{ Params: { id: string } }>("/api/requests/:id/finish", { preHandler: admin }, async (request, reply) => {
     // Marking rather than deleting preserves the request in the user's history.
     const updated = await options.prisma.request.updateMany({ where: { id: request.params.id, finishedAt: null }, data: { finishedAt: new Date() } });

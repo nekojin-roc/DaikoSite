@@ -42,6 +42,8 @@
   "Signing in…": "Signing in…",
   "Use your ParcelHub account to sign in.": "Use your ParcelHub account to sign in.",
   "Create an account or manage your password": "Create an account or manage your password",
+  "Create an account": "Create an account",
+  "Forgot your password?": "Forgot your password?",
   "Loading Daiko…": "Loading Daiko…",
   "View queue": "View queue",
   "Make a request": "Make a request",
@@ -195,5 +197,14 @@
   "Request finished.": "Request finished.",
   "Request type": "Request type",
   "Member request": "Member request",
+  "Your ParcelHub account is ready. Sign in to Daiko to continue.": "Your ParcelHub account is ready. Sign in to Daiko to continue.",
+  "Completed requests": "Completed requests",
+  "Loading completed requests…": "Loading completed requests…",
+  "Could not load completed requests.": "Could not load completed requests.",
+  "Could not load the request queue.": "Could not load the request queue.",
+  "Retry": "Retry",
+  "No completed requests yet": "No completed requests yet",
+  "Finished requests for this event will appear here.": "Finished requests for this event will appear here.",
+  "Finished on {{date}}": "Finished on {{date}}",
   "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone."
 }

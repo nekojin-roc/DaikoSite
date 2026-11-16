@@ -42,6 +42,8 @@
   "Signing in…": "正在登录…",
   "Use your ParcelHub account to sign in.": "使用 ParcelHub 账户登录。",
   "Create an account or manage your password": "创建账户或管理密码",
+  "Create an account": "创建账户",
+  "Forgot your password?": "忘记密码？",
   "Loading Daiko…": "正在加载 Daiko…",
   "View queue": "查看队列",
   "Make a request": "提交请求",
@@ -195,5 +197,14 @@
   "Request finished.": "请求已完成。",
   "Request type": "请求类型",
   "Member request": "成员请求",
+  "Your ParcelHub account is ready. Sign in to Daiko to continue.": "您的 ParcelHub 账户已准备就绪。请登录 Daiko 继续。",
+  "Completed requests": "已完成的请求",
+  "Loading completed requests…": "正在加载已完成的请求…",
+  "Could not load completed requests.": "无法加载已完成的请求。",
+  "Could not load the request queue.": "无法加载请求队列。",
+  "Retry": "重试",
+  "No completed requests yet": "暂无已完成的请求",
+  "Finished requests for this event will appear here.": "此活动已完成的请求会显示在这里。",
+  "Finished on {{date}}": "完成于 {{date}}",
   "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "确定删除“{{name}}”吗？当前显示的请求数：{{shownCount}}。该活动的所有相关请求也将被永久删除，且无法撤销。"
 }

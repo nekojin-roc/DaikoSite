@@ -42,6 +42,8 @@
   "Signing in…": "ログイン中…",
   "Use your ParcelHub account to sign in.": "ParcelHubアカウントでログインしてください。",
   "Create an account or manage your password": "アカウントの作成・パスワード管理",
+  "Create an account": "アカウントを作成",
+  "Forgot your password?": "パスワードをお忘れですか？",
   "Loading Daiko…": "Daikoを読み込み中…",
   "View queue": "リクエストを見る",
   "Make a request": "リクエストする",
@@ -195,5 +197,14 @@
   "Request finished.": "リクエストを完了しました。",
   "Request type": "リクエストの種類",
   "Member request": "メンバーへのリクエスト",
+  "Your ParcelHub account is ready. Sign in to Daiko to continue.": "ParcelHubアカウントの準備ができました。Daikoにログインして続行してください。",
+  "Completed requests": "完了済みリクエスト",
+  "Loading completed requests…": "完了済みリクエストを読み込み中…",
+  "Could not load completed requests.": "完了済みリクエストを読み込めませんでした。",
+  "Could not load the request queue.": "リクエスト一覧を読み込めませんでした。",
+  "Retry": "再試行",
+  "No completed requests yet": "完了済みのリクエストはありません",
+  "Finished requests for this event will appear here.": "このイベントの完了済みリクエストがここに表示されます。",
+  "Finished on {{date}}": "完了日時：{{date}}",
   "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "「{{name}}」を削除しますか？表示中のリクエスト数：{{shownCount}}件。このイベントのすべてのリクエストも完全に削除されます。この操作は取り消せません。"
 }

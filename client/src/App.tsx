@@ -47,6 +47,16 @@ function App() {
   const [selected, setSelected] = useState<Event | null>(null);
   const [queueEvent, setQueueEvent] = useState<Event | null>(null);
   const [queue, setQueue] = useState<RequestItem[]>([]);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [queueError, setQueueError] = useState('');
+  const [completedQueue, setCompletedQueue] = useState<RequestItem[]>([]);
+  const [completedLoading, setCompletedLoading] = useState(false);
+  const [completedError, setCompletedError] = useState('');
+  const queueSequence = useRef(0);
+  const activeSequence = useRef(0);
+  const completedSequence = useRef(0);
+  const openQueueEventId = useRef<string | null>(null);
+  const [accountReady, setAccountReady] = useState(() => new URLSearchParams(window.location.search).get('account') === 'ready');
   const [showCreate, setShowCreate] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -64,6 +74,14 @@ function App() {
   const initialize = async () => { const result = await api<{user: User | null}>('/daiko-api/session'); setUser(result.user); if (result.user) { const isAdmin = result.user.role?.toUpperCase() === 'ADMIN'; setView(isAdmin ? 'admin' : 'events'); await Promise.all([loadEvents(), loadGroups(), ...(isAdmin ? [] : [loadMyRequests()])]); } };
   useEffect(() => { initialize().catch(e => setError(errorText(e))).finally(() => setLoading(false)); }, []);
   useEffect(() => {
+    if (!accountReady) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('account');
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch { /* The sign-in notice still works if browser history is unavailable. */ }
+  }, [accountReady]);
+  useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const refreshDay = () => {
       clearTimeout(timer);
@@ -76,20 +94,56 @@ function App() {
     document.addEventListener('visibilitychange', onVisibility);
     return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibility); };
   }, []);
-  const signIn = async (email: string, password: string) => { setBusy(true); setError(''); try { await post('/api/auth/sign-in/email', {email, password}); await initialize(); } catch(e) { setError(errorText(e)); } finally {setBusy(false);} };
-  const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); setQueueEvent(null); setQueue([]); setEvents([]); setGroups([]); setMyRequests([]); setShowCreate(false); setNotice(''); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
-  const navigate = (next: View) => {setView(next); setSelected(null); setQueueEvent(null); setShowCreate(false); setError(''); setNotice('');};
-  const selectQueue = async (event: Event) => {setQueueEvent(event); setQueue([]); setError(''); setBusy(true); try {const result = await api<{requests: RequestItem[]}>(`/daiko-api/events/${event.id}/requests`); setQueue(result.requests);} catch(e){setError(errorText(e));} finally {setBusy(false);} };
+  const signIn = async (email: string, password: string) => { setBusy(true); setError(''); try { await post('/api/auth/sign-in/email', {email, password}); await initialize(); setAccountReady(false); } catch(e) { setError(errorText(e)); } finally {setBusy(false);} };
+  const closeQueue = () => { queueSequence.current += 1; activeSequence.current += 1; completedSequence.current += 1; openQueueEventId.current = null; setQueueEvent(null); setQueue([]); setQueueLoading(false); setQueueError(''); setCompletedQueue([]); setCompletedLoading(false); setCompletedError(''); };
+  const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); closeQueue(); setEvents([]); setGroups([]); setMyRequests([]); setShowCreate(false); setNotice(''); setAccountReady(false); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
+  const navigate = (next: View) => {setView(next); setSelected(null); closeQueue(); setShowCreate(false); setError(''); setNotice('');};
+  const loadCompleted = async (eventId: string, queueVersion: number) => {
+    const version = ++completedSequence.current;
+    setCompletedLoading(true);
+    setCompletedError('');
+    try {
+      const result = await api<{requests: RequestItem[]}>(`/daiko-api/events/${encodeURIComponent(eventId)}/requests/completed`);
+      if (queueSequence.current === queueVersion && completedSequence.current === version) setCompletedQueue(result.requests);
+    } catch (e) {
+      if (queueSequence.current === queueVersion && completedSequence.current === version) setCompletedError(errorText(e));
+    } finally {
+      if (queueSequence.current === queueVersion && completedSequence.current === version) setCompletedLoading(false);
+    }
+  };
+  const loadActiveQueue = async (eventId: string, version: number) => {
+    const activeVersion = ++activeSequence.current;
+    setQueueLoading(true);
+    setQueueError('');
+    try {
+      const result = await api<{requests: RequestItem[]}>(`/daiko-api/events/${encodeURIComponent(eventId)}/requests`);
+      if (queueSequence.current === version && activeSequence.current === activeVersion) setQueue(result.requests);
+    } catch(e) { if (queueSequence.current === version && activeSequence.current === activeVersion) setQueueError(errorText(e)); }
+    finally { if (queueSequence.current === version && activeSequence.current === activeVersion) setQueueLoading(false); }
+  };
+  const selectQueue = (event: Event) => {
+    const version = ++queueSequence.current;
+    openQueueEventId.current = event.id;
+    setQueueEvent(event); setQueue([]); setCompletedQueue([]); setError('');
+    void loadActiveQueue(event.id, version);
+    void loadCompleted(event.id, version);
+  };
   const finishRequest = async (id: string) => {
     if (finishingId) return;
+    const eventId = queueEvent?.id;
     setFinishingId(id);
     setError('');
     try {
       await post(`/daiko-api/requests/${encodeURIComponent(id)}/finish`);
-      setQueue(current => current.filter(item => item.id !== id));
-      if (queueEvent) setEvents(current => current.map(item => item.id === queueEvent.id ? {...item, requestCount: Math.max(0, item.requestCount - 1)} : item));
-      setNotice('Request finished.');
-    } catch(e) { setError(errorText(e)); } finally { setFinishingId(null); }
+      if (eventId) setEvents(current => current.map(item => item.id === eventId ? {...item, requestCount: Math.max(0, item.requestCount - 1)} : item));
+      if (eventId && openQueueEventId.current === eventId) {
+        const version = queueSequence.current;
+        setQueue(current => current.filter(item => item.id !== id));
+        setNotice('Request finished.');
+        void loadActiveQueue(eventId, version);
+        void loadCompleted(eventId, version);
+      }
+    } catch(e) { if (openQueueEventId.current === eventId) setError(errorText(e)); } finally { setFinishingId(null); }
   };
   const deleteEvent = async (event: Event) => {
     if (!window.confirm(t('Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.', {name: event.name, shownCount: queue.length}))) return;
@@ -98,14 +152,13 @@ function App() {
     try {
       await api<void>(`/daiko-api/events/${encodeURIComponent(event.id)}`, {method: 'DELETE'});
       setEvents(current => current.filter(item => item.id !== event.id));
-      setQueueEvent(null);
-      setQueue([]);
+      if (openQueueEventId.current === event.id) closeQueue();
       setNotice('Event deleted successfully.');
     } catch(e) { setError(errorText(e)); } finally { setBusy(false); }
   };
 
   if (loading) return <div className="loading"><span className="spinner"/> {t("Loading Daiko…")}</div>;
-  if (!user) return <Login onSubmit={signIn} busy={busy} error={error}/>;
+  if (!user) return <Login onSubmit={signIn} busy={busy} error={error} accountReady={accountReady}/>;
   return <div className={eventListView ? 'app-shell event-list-screen' : 'app-shell'}>
     <aside className="sidebar">
       <div className="brand"><BrandLogo className="brand-mark"/><span>Daiko</span></div>
@@ -128,7 +181,16 @@ function App() {
         {admin && view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading admin-event-heading"><div><h1>{t("Event management")}</h1></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> {t("Add event")}</button></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No upcoming events")} text={t("Add an event to start receiving requests.")}/>}</div></>}
         {admin && view === 'past' && !queueEvent && <><div className="page-heading"><div><h1>{t("Past events")}</h1></div></div><div className="section-heading"><div><h2>{t("Event history")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{pastEvents.length ? pastEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<History size={22}/>} title={t("No past events")} text={t("Past events will appear here.")}/>}</div></>}
         {view === 'admin' && showCreate && <CreateEvent groups={groups} busy={busy} onBack={() => setShowCreate(false)} onSubmit={async values => {setBusy(true); setError(''); try {await post('/daiko-api/events', values); await loadEvents(); setShowCreate(false); setNotice('Event added successfully.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
-        {admin && (view === 'admin' || view === 'past') && queueEvent && <><button className="back" onClick={() => setQueueEvent(null)}><ArrowLeft size={16}/> {view === 'past' ? t('Past events') : t('Upcoming events')}</button><div className="page-heading"><div><h1>{queueEvent.name}</h1></div><div className="queue-actions"><span className="count">{t('requestCount', {count: queue.length})}</span><button type="button" className="button danger" onClick={() => deleteEvent(queueEvent)} disabled={busy || !!finishingId}><Trash2 size={16}/> {t('Delete event')}</button></div></div><div className="section-heading"><div><h2>{t("Request queue")}</h2></div></div>{busy ? <div className="loading-inline">{t("Loading queue…")}</div> : <div className="request-list">{queue.length ? queue.map((request, index) => <RequestCard key={request.id} request={request} position={index + 1} onFinish={() => finishRequest(request.id)} finishing={finishingId === request.id} finishDisabled={busy || !!finishingId}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("The queue is empty")} text={t("Requests for this event will appear here as they come in.")}/>}</div>}</>}
+        {admin && (view === 'admin' || view === 'past') && queueEvent && <>
+          <button className="back" onClick={closeQueue}><ArrowLeft size={16}/> {view === 'past' ? t('Past events') : t('Upcoming events')}</button>
+          <div className="page-heading"><div><h1>{queueEvent.name}</h1></div><div className="queue-actions">{!queueLoading && !queueError && <span className="count">{t('requestCount', {count: queue.length})}</span>}<button type="button" className="button danger" onClick={() => deleteEvent(queueEvent)} disabled={busy || queueLoading || completedLoading || !!queueError || !!finishingId}><Trash2 size={16}/> {t('Delete event')}</button></div></div>
+          <div className="section-heading"><div><h2>{t("Request queue")}</h2></div></div>
+          {queueLoading ? <div className="loading-inline" role="status">{t("Loading queue…")}</div> : queueError ? <div className="alert error" role="alert"><span>{t('Could not load the request queue.')}</span><button type="button" className="text-button" onClick={() => void loadActiveQueue(queueEvent.id, queueSequence.current)}>{t('Retry')}</button></div> : <div className="request-list">{queue.length ? queue.map((request, index) => <RequestCard key={request.id} request={request} position={index + 1} onFinish={() => finishRequest(request.id)} finishing={finishingId === request.id} finishDisabled={busy || !!finishingId}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("The queue is empty")} text={t("Requests for this event will appear here as they come in.")}/>}</div>}
+          <section className="completed-requests" aria-labelledby="completed-requests-heading">
+            <div className="section-heading"><h2 id="completed-requests-heading">{t('Completed requests')}</h2>{!completedLoading && !completedError && <span className="count">{t('requestCount', {count: completedQueue.length})}</span>}</div>
+            {completedLoading ? <div className="loading-inline" role="status">{t('Loading completed requests…')}</div> : completedError ? <div className="alert error" role="alert"><span>{t('Could not load completed requests.')}</span><button type="button" className="text-button" onClick={() => void loadCompleted(queueEvent.id, queueSequence.current)}>{t('Retry')}</button></div> : <div className="request-list">{completedQueue.length ? completedQueue.map(request => <RequestCard key={request.id} request={request}/>) : <Empty icon={<Check size={22}/>} title={t('No completed requests yet')} text={t('Finished requests for this event will appear here.')}/>}</div>}
+          </section>
+        </>}
         {admin && view === 'groups' && <GroupManagement groups={groups} onBack={() => navigate('settings')} onReload={async () => {await Promise.all([loadGroups(), loadEvents()]);}}/>}
         {view === 'settings' && <Settings onManageGroups={admin ? () => navigate('groups') : undefined}/>}
       </main>
@@ -168,10 +230,14 @@ function Settings({onManageGroups}: {onManageGroups?: () => void}) {
   </section></>;
 }
 
-function Login({onSubmit, busy, error}: {onSubmit: (email: string, password: string) => void; busy: boolean; error: string}) {
+function Login({onSubmit, busy, error, accountReady}: {onSubmit: (email: string, password: string) => void; busy: boolean; error: string; accountReady: boolean}) {
   const { t } = useTranslation();
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  return <main className="login-page"><div className="login-card"><BrandLogo className="login-icon"/><h1>{t("Login")}</h1>{error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}</div>}<form onSubmit={e => {e.preventDefault(); onSubmit(email, password);}}><label>{t("Email")}<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"/></label><label>{t("Password")}<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t("Enter your password")}/></label><button className="button primary full" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')} <ArrowRight size={16}/></button></form><div className="login-divider"/><p className="login-help">{t("Use your ParcelHub account to sign in.")}<br/><a href={window.location.hostname === 'localhost' ? 'http://localhost:5173/auth' : 'https://parcelhub.nekoj.in/auth'}>{t("Create an account or manage your password")} <ArrowRight size={13}/></a></p></div></main>;
+  const localHostname = window.location.hostname;
+  const parcelHubOrigin = localHostname === 'localhost' || localHostname === '127.0.0.1'
+    ? `http://${localHostname}:5173`
+    : 'https://parcelhub.nekoj.in';
+  return <main className="login-page"><div className="login-card"><BrandLogo className="login-icon"/><h1>{t("Login")}</h1>{accountReady && <div className="alert success" role="status">{t('Your ParcelHub account is ready. Sign in to Daiko to continue.')}</div>}{error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}</div>}<form onSubmit={e => {e.preventDefault(); onSubmit(email, password);}}><label>{t("Email")}<input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com"/></label><label>{t("Password")}<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required placeholder={t("Enter your password")}/></label><button className="button primary full" disabled={busy}>{busy ? t('Signing in…') : t('Sign in')} <ArrowRight size={16}/></button></form><div className="login-divider"/><p className="login-help">{t("Use your ParcelHub account to sign in.")}<br/><a href={`${parcelHubOrigin}/auth?from=daiko`}>{t('Create an account')} <ArrowRight size={13}/></a><br/><a href={`${parcelHubOrigin}/forgot-password`}>{t('Forgot your password?')} <ArrowRight size={13}/></a></p></div></main>;
 }
 function EventCard({event, onClick, admin = false}: {event: Event; onClick: () => void; admin?: boolean}) {
   const { t } = useTranslation();
@@ -319,7 +385,7 @@ function eventImportUrl(value: string): string {
 }
 function RequestCard({request, position, onFinish, finishing, finishDisabled}: {request: RequestItem; position?: number; onFinish?: () => void; finishing?: boolean; finishDisabled?: boolean}) {
   const { t } = useTranslation();
- return <article className="request-card"><div className="request-top"><div className="request-meta">{position && <span className="position">{String(position).padStart(2, '0')}</span>}<span className="badge">{request.offeringName || (request.type === 'CHEKI' ? t('Cheki') : t('Goods'))}</span>{request.amount != null && <span className="amount">× {request.amount}</span>}{request.finishedAt && <span className="badge finished-badge">{t('Finished')}</span>}</div><time><Clock3 size={14}/>{submitted(request.createdAt)}</time></div>{request.event && <><h3>{request.event.name}</h3><p className="request-subtitle">{request.event.groupName} · {eventDate(request.event.startsAt)}</p></>}{request.user && <div className="request-user"><UserRound size={15}/><strong>{request.user.name}</strong><span>{request.user.email}</span></div>}{request.memberName && <div className="request-member">{t("Member")}: <strong>{request.memberName}</strong></div>}<p className="request-message">{request.message}</p>{request.imageUrl && <a className="request-attachment" href={request.imageUrl} target="_blank" rel="noopener noreferrer"><img src={request.imageUrl} alt={t("Attached image")}/></a>}{onFinish && <div className="request-actions"><button type="button" className="button secondary" onClick={onFinish} disabled={finishDisabled}><Check size={15}/> {finishing ? t('Finishing…') : t('Finish')}</button></div>}</article>;
+ return <article className="request-card"><div className="request-top"><div className="request-meta">{position && <span className="position">{String(position).padStart(2, '0')}</span>}<span className="badge">{request.offeringName || (request.type === 'CHEKI' ? t('Cheki') : t('Goods'))}</span>{request.amount != null && <span className="amount">× {request.amount}</span>}{request.finishedAt && <span className="badge finished-badge">{t('Finished')}</span>}</div><time dateTime={request.createdAt}><Clock3 size={14}/>{submitted(request.createdAt)}</time></div>{request.event && <><h3>{request.event.name}</h3><p className="request-subtitle">{request.event.groupName} · {eventDate(request.event.startsAt)}</p></>}{request.user && <div className="request-user"><UserRound size={15}/><strong>{request.user.name}</strong><span>{request.user.email}</span></div>}{request.memberName && <div className="request-member">{t("Member")}: <strong>{request.memberName}</strong></div>}<p className="request-message">{request.message}</p>{request.imageUrl && <a className="request-attachment" href={request.imageUrl} target="_blank" rel="noopener noreferrer"><img src={request.imageUrl} alt={t("Attached image")}/></a>}{request.finishedAt && <p className="request-finished-at">{t('Finished on {{date}}', {date: submitted(request.finishedAt)})}</p>}{onFinish && <div className="request-actions"><button type="button" className="button secondary" onClick={onFinish} disabled={finishDisabled}><Check size={15}/> {finishing ? t('Finishing…') : t('Finish')}</button></div>}</article>;
 }
 function Empty({icon, title, text}: {icon: React.ReactNode; title: string; text: string}) {return <div className="empty"><div className="empty-icon">{icon}</div><h3>{title}</h3><p>{text}</p></div>;}
 export default App;

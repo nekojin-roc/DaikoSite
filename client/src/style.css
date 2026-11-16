@@ -85,3 +85,8 @@ html::-webkit-scrollbar,.mobile-nav::-webkit-scrollbar{display:none}
   .admin-event-heading h1{font-size:clamp(20px,5.1vw,25px)}
   .admin-event-heading>.button{flex-shrink:0}
 }
+
+.completed-requests{margin-top:40px}
+.request-finished-at{font-size:11px;color:#718295;margin-top:14px}
+.dark .request-finished-at{color:#a7b6c8}
+.pickles .request-finished-at{color:#765e4e}
