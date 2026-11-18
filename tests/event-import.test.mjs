@@ -12,6 +12,26 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const page = html => new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
 const picture = (body = WEBP, contentType = 'image/webp', headers = {}) => new Response(body, { headers: { 'content-type': contentType, ...headers } });
 const liveHtml = (image = LIVE_IMAGE, title = '11/04 DaTuRa-ダチュラ-presents. 「ダチュラ学園」') => `<h1 class="heading01">${title}</h1><img alt="イベントイメージ画像" src="${image}">`;
+const liveSchedule = `<dl class="event-detail-info__list">
+  <div class="event-detail-info__block">
+    <dt class="event-detail-info__title"><span class="event-detail-info__date">開催日</span></dt>
+    <dd class="event-detail-info__data">2026年11月24日(火)</dd>
+  </div>
+  <div class="event-detail-info__block">
+    <dt class="event-detail-info__title"><span class="event-detail-info__time">時間</span></dt>
+    <dd class="event-detail-info__data event-detail-info__data--time">
+      <dl class="event-detail-info-time event-detail-info-time--large">
+        <dt class="event-detail-info-time__title">開演</dt><dd class="event-detail-info-time__date">17:30</dd>
+      </dl>
+      <div class="event-detail-info__sub-time"><dl class="event-detail-info-time">
+        <dt class="event-detail-info-time__title">開場</dt><dd class="event-detail-info-time__date">17:00</dd>
+      </dl></div>
+    </dd>
+  </div>
+</dl>`;
+const ticketSchedule = `<div class="FlexBox_flex__8_6hs" role="presentation">
+  <span class="Typography_root__9AOcJ">公演日時</span><span class="Typography_root__9AOcJ">2026/11/26(木)<br>開場時刻 <!-- -->18:40<!-- --> / 開演時刻<!-- --> <!-- -->19:00</span>
+</div>`;
 
 function mockFetch(responses) {
   const calls = [];
@@ -32,11 +52,12 @@ function errorStatus(status, message) {
 test('TicketDive decodes the title and downloads original bytes outside the Next image optimizer', async () => {
   const wrapped = `/_next/image?url=${encodeURIComponent(TICKET_IMAGE)}&amp;w=1120&amp;q=75`;
   const { fetch, calls } = mockFetch({
-    [TICKET_URL]: page(`<meta property="og:title" content="Wrong fallback | TicketDive"><meta property="og:image" content="https://storage.googleapis.com/ticketdive/ogp.webp"><span class="Typography_root__new EventInfoUnit_name__changed">MAD&#x27;S iNK presents「狂い倒れvol.15」</span><img alt="fv画像" class="EventImage_image__changed" src="${wrapped}" srcset="${wrapped.replace('1120', '256')} 256w, ${wrapped} 1120w">`),
+    [TICKET_URL]: page(`<meta property="og:title" content="Wrong fallback | TicketDive"><meta property="og:image" content="https://storage.googleapis.com/ticketdive/ogp.webp"><span class="Typography_root__new EventInfoUnit_name__changed">MAD&#x27;S iNK presents「狂い倒れvol.15」</span><img alt="fv画像" class="EventImage_image__changed" src="${wrapped}" srcset="${wrapped.replace('1120', '256')} 256w, ${wrapped} 1120w">${ticketSchedule}`),
     [TICKET_IMAGE]: picture(),
   });
   const result = await fetchEventImport(TICKET_URL, { fetch });
   assert.equal(result.name, 'MAD\'S iNK presents「狂い倒れvol.15」');
+  assert.equal(result.startsAt, '2026-11-26T19:00');
   assert.deepEqual(result.image, WEBP);
   assert.equal(result.contentType, 'image/webp');
   assert.equal(result.extension, '.webp');
@@ -52,12 +73,27 @@ test('TicketDive decodes the title and downloads original bytes outside the Next
 
 test('LivePocket uses the complete h1 title and main image, preserving original image data', async () => {
   const { fetch } = mockFetch({
-    [LIVE_URL]: page(`<meta property="og:title" content="11/04 DaTuRa-ダチ...のチケット情報｜LivePocket（ライブポケット）">${liveHtml()}<img alt="イベントイメージ画像" src="https://livepocket.jp/public/event_image/filename/999/recommendation.webp">`),
+    [LIVE_URL]: page(`<meta property="og:title" content="11/04 DaTuRa-ダチ...のチケット情報｜LivePocket（ライブポケット）">${liveHtml()}<img alt="イベントイメージ画像" src="https://livepocket.jp/public/event_image/filename/999/recommendation.webp">${liveSchedule.replace('開演', '開場')}${liveSchedule}`),
     [LIVE_IMAGE]: picture(),
   });
   const result = await fetchEventImport(`  ${LIVE_URL}#tickets  `, { fetch });
   assert.equal(result.name, '11/04 DaTuRa-ダチュラ-presents. 「ダチュラ学園」');
+  assert.equal(result.startsAt, '2026-11-24T17:30');
   assert.deepEqual(result.image, WEBP);
+});
+
+test('leaves the date and time unset for non-calendar dates, invalid times or doors-only listings', async () => {
+  for (const [url, image, html] of [
+    [LIVE_URL, LIVE_IMAGE, liveHtml() + liveSchedule.replace('11月24日', '2月29日')],
+    [LIVE_URL, LIVE_IMAGE, liveHtml() + liveSchedule.replace('17:30', '24:00')],
+    [LIVE_URL, LIVE_IMAGE, liveHtml() + liveSchedule.replace('開演', '開場')],
+    [TICKET_URL, TICKET_IMAGE, `<span class="EventInfoUnit_name__x">Live</span><img alt="fv画像" src="${TICKET_IMAGE}">${ticketSchedule.replace(' / 開演時刻<!-- --> <!-- -->19:00', '')}`],
+  ]) {
+    const { fetch } = mockFetch({ [url]: page(html), [image]: picture() });
+    const result = await fetchEventImport(url, { fetch });
+    assert.equal(result.startsAt, undefined);
+    assert.deepEqual(result.image, WEBP);
+  }
 });
 
 test('chooses the largest srcset candidate when no optimized-image wrapper is present', async () => {
@@ -212,6 +248,19 @@ test('uses the isolated browser only for LivePocket challenges and validates its
     return valid;
   };
   assert.deepEqual(await fetchEventImport(LIVE_URL, { fetch: challenge, browserImport }), { name: valid.name, image: WEBP, contentType: valid.contentType, extension: valid.extension });
+  for (const [date, startTime, expected] of [
+    ['2026年11月24日(火)', '17:30', '2026-11-24T17:30'],
+    ['２０２８年２月２９日（火）', '９：０５', '2028-02-29T09:05'],
+    ['2026年2月29日(日)', '17:30', undefined],
+    ['2026年11月24日(火)', '17:60', undefined],
+    ['2026年11月24日(火)', undefined, undefined],
+  ]) {
+    const result = await fetchEventImport(LIVE_URL, {
+      fetch: challenge, browserImport: async () => ({ ...valid, date, startTime }),
+    });
+    assert.equal(result.startsAt, expected);
+    assert.deepEqual(result.image, WEBP);
+  }
   assert.equal(calls, 1);
   await assert.rejects(fetchEventImport(TICKET_URL, { fetch: challenge, browserImport }), errorStatus(502));
   assert.equal(calls, 1);

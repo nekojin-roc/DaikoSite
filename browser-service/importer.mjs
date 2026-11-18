@@ -41,9 +41,22 @@ export async function importEvent(browser, event) {
       if (redirected || finalUrl.origin !== event.origin || finalUrl.pathname.replace(/\/$/, '') !== event.pathname.replace(/\/$/, '')) throw new ImportError(502, 'LivePocket redirected to an unsupported location.');
       const name = (await heading.textContent() || '').replace(/\s+/gu, ' ').trim();
       if (!name || name.length > 200) throw new ImportError(422, 'The event title could not be found.');
-      const candidates = await page.evaluate(() => {
+      const { candidates, ...schedule } = await page.evaluate(() => {
         const image = document.querySelector('img[alt="イベントイメージ画像"]');
-        return [image?.getAttribute('src'), image?.getAttribute('data-src'), document.querySelector('meta[property="og:image:secure_url"]')?.getAttribute('content'), document.querySelector('meta[property="og:image"]')?.getAttribute('content')].filter(Boolean);
+        const candidates = [image?.getAttribute('src'), image?.getAttribute('data-src'), document.querySelector('meta[property="og:image:secure_url"]')?.getAttribute('content'), document.querySelector('meta[property="og:image"]')?.getAttribute('content')].filter(Boolean);
+
+        for (const details of document.querySelectorAll('.event-detail-info__list')) {
+          const dateBlock = details.querySelector('.event-detail-info__date')?.closest('.event-detail-info__block');
+          const date = dateBlock?.querySelector(':scope > .event-detail-info__data')?.textContent?.trim();
+          const times = details.querySelectorAll('.event-detail-info__data--time .event-detail-info-time');
+          const performance = Array.from(times).find(time => {
+            const label = time.querySelector('.event-detail-info-time__title')?.textContent?.trim();
+            return label === '開演' || label === '開演時間' || label === '開演時刻';
+          });
+          const startTime = performance?.querySelector('.event-detail-info-time__date')?.textContent?.trim();
+          if (date && startTime) return { candidates, date, startTime };
+        }
+        return { candidates };
       });
       const original = candidates.map(candidate => imageUrl(candidate, event)).find(Boolean);
       if (!original) throw new ImportError(422, "The event's original image could not be found.");
@@ -68,7 +81,7 @@ export async function importEvent(browser, event) {
       const bytes = Buffer.from(image.image, 'base64');
       const format = imageFormat(bytes);
       if (!format || format.contentType !== image.contentType || bytes.length > MAX_IMAGE) throw new ImportError(422, 'The event image format is invalid.');
-      return {name, image:image.image, ...format};
+      return {name, image:image.image, ...format, ...schedule};
     })();
     return await Promise.race([operation, deadline]);
   } catch (error) {

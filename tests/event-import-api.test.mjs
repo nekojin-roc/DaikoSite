@@ -11,6 +11,7 @@ import { EventImportError } from '../dist/event-import.js';
 const ORIGIN = 'http://localhost:5173';
 const EVENT_URL = 'https://ticketdive.com/event/kuruidaore15';
 const EVENT_NAME = 'MAD\'S iNK presents「狂い倒れvol.15」';
+const EVENT_START = '2027-04-10T19:00';
 const ORIGINAL_IMAGE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0y8AAAAASUVORK5CYII=', 'base64');
 
 test('event import authorization, original-image storage, and persistence', async t => {
@@ -49,7 +50,7 @@ test('event import authorization, original-image storage, and persistence', asyn
       importEvent: async url => {
         calls.push(url);
         if (importError) throw importError;
-        return { name: EVENT_NAME, image: ORIGINAL_IMAGE, contentType: 'image/png', extension: '.png' };
+        return { name: EVENT_NAME, image: ORIGINAL_IMAGE, contentType: 'image/png', extension: '.png', startsAt: EVENT_START };
       },
     });
     apps.push(app);
@@ -95,6 +96,7 @@ test('event import authorization, original-image storage, and persistence', asyn
     assert.equal(response.statusCode, 200);
     const imported = response.json();
     assert.equal(imported.name, EVENT_NAME);
+    assert.equal(imported.startsAt, EVENT_START);
     assert.match(imported.imageUrl, /^\/daiko-api\/event-images\/[a-f0-9]{64}\.png$/);
     imageUrl = imported.imageUrl;
     assert.deepEqual(calls, [EVENT_URL]);

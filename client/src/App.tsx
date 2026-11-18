@@ -286,6 +286,7 @@ function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSu
  const lastAttempt = useRef('');
  const nameEdited = useRef(false);
  const imageEdited = useRef(false);
+ const startsAtEdited = useRef(false);
  const nameRevision = useRef(0);
  const imageRevision = useRef(0);
  const sourceUrl = eventImportUrl(eventUrl);
@@ -303,23 +304,28 @@ function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSu
    const startingImageRevision = imageRevision.current;
    lastAttempt.current = url;
    setImportStatus('loading');
-   setImportMessage('Fetching the event title and main image…');
+   setImportMessage('Fetching event details…');
    try {
-     const result = await api<{name: string; imageUrl: string}>('/daiko-api/events/import', {
+     const result = await api<{name: string; imageUrl: string; startsAt?: string}>('/daiko-api/events/import', {
        method: 'POST', body: JSON.stringify({url}), signal: controller.signal,
      });
      if (controller.signal.aborted || sequence !== importSequence.current) return;
      const updateName = !nameEdited.current && nameRevision.current === startingNameRevision;
      const updateImage = !imageEdited.current && imageRevision.current === startingImageRevision;
      if (updateName) setName(result.name);
+     if (result.startsAt && !startsAtEdited.current) setStartsAt(result.startsAt);
      if (updateImage) {
        setImportedImageUrl(result.imageUrl);
        setImageFailed(false);
      }
      setImportStatus('success');
-     setImportMessage(updateName && updateImage
-       ? 'Event title and main image fetched. Add the group, date and time below.'
-       : 'Event details fetched. Your manual changes were kept; review the details below.');
+     if (!updateName || !updateImage || startsAtEdited.current) {
+       setImportMessage('Event details fetched. Your manual changes were kept; review the details below.');
+     } else {
+       setImportMessage(result.startsAt
+         ? 'Event details fetched. Select a group below.'
+         : 'Event title and main image fetched. Add the group, date and time below.');
+     }
    } catch (error) {
      if (controller.signal.aborted || sequence !== importSequence.current) return;
      setImportStatus('error');
@@ -353,6 +359,7 @@ function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSu
    setImportStatus('idle');
    setImportMessage('');
    if (!nameEdited.current) setName('');
+   if (!startsAtEdited.current) setStartsAt('');
    setImportedImageUrl('');
  };
 
@@ -382,13 +389,13 @@ function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSu
          }}/>
          <button type="button" className="button secondary" disabled={busy || importing || !sourceUrl} onClick={() => void fetchEvent(sourceUrl, true)}>{importing ? <><span className="spinner" aria-hidden="true"/> {t("Fetching…")}</> : importStatus === 'error' ? t('Retry fetch') : t('Fetch details')}</button>
        </div>
-       <p id="event-import-help" className="field-help">{t("The event title and original main image are fetched automatically. You can edit the details below.")}</p>
+       <p id="event-import-help" className="field-help">{t("Imports the event title, original main image and performance start time when available.")}</p>
        {importMessage && <div className={`import-status ${importStatus}`} role={importStatus === 'error' ? 'alert' : 'status'}>{importStatus === 'success' && <Check size={15} aria-hidden="true"/>}<span>{t(importMessage, {defaultValue: importMessage})}{importStatus === 'error' && importMessage !== 'Use an HTTPS TicketDive /event/ link or LivePocket /e/ link. You can also enter the details manually.' ? ` ${t('You can retry or enter the details manually.')}` : ''}</span></div>}
      </div>
      <div className="panel-title"><h2>{t("Event details")}</h2></div>
      <label>{t("Event name")} <span className="required">*</span><input required maxLength={200} value={name} onChange={e => {nameEdited.current = true; nameRevision.current += 1; setName(e.target.value);}} placeholder={t("e.g. Spring Live 2026")}/></label>
      <label>{t("Group name")} <span className="required">*</span><select required value={groupId} onChange={e => setGroupId(e.target.value)}><option value="">{t("Select a group")}</option>{groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select>{groups.length === 0 && <small>{t("Add a group in Manage groups first.")}</small>}</label>
-     <label>{t("Date and time")} <span className="required">*</span><input required type="datetime-local" name="startsAt" value={startsAt} onInput={e => setStartsAt(e.currentTarget.value)}/><small>{t("Use Japan Standard Time (JST).")}</small></label>
+     <label>{t("Date and time")} <span className="required">*</span><input required type="datetime-local" name="startsAt" value={startsAt} onInput={e => {startsAtEdited.current = true; setStartsAt(e.currentTarget.value);}}/><small>{t("Use Japan Standard Time (JST).")}</small></label>
      <label>{t("Main visual URL")}<input type="url" value={manualImageUrl} onChange={e => {imageEdited.current = true; imageRevision.current += 1; setImportedImageUrl(''); setManualImageUrl(e.target.value);}} placeholder="https://example.com/event-image.jpg"/><small>{importedImageUrl ? t('Main image imported. Enter a direct image URL to replace it.') : t('Optional. Use a direct image link if you want to add your own visual.')}</small></label>
      {imageUrl && <div className="event-image-preview">
        {imageFailed ? <p className="preview"><ImageIcon size={16} aria-hidden="true"/> {t("Unable to preview this image. Check the URL or try fetching again.")}</p> : <img src={imageUrl} alt={name ? t('imageAlt', {name}) : t('Event main visual preview')} onError={() => setImageFailed(true)}/>}

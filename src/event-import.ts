@@ -1,13 +1,16 @@
 import { load } from "cheerio";
+import { z } from "zod";
 
 type Provider = "ticketdive" | "livepocket";
 type Fetch = typeof globalThis.fetch;
+type ImportedEvent = { name: string; image: Buffer; contentType: string; extension: string; startsAt?: string };
 
 const HTML_LIMIT = 5 * 1024 * 1024;
 const IMAGE_LIMIT = 50 * 1024 * 1024;
 const TIMEOUT_MS = 60_000;
 const MAX_REDIRECTS = 5;
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+const localDateTime = z.iso.datetime({ local: true, precision: -1 });
 
 export class EventImportError extends Error {
   constructor(message: string, public readonly statusCode: number) {
@@ -56,7 +59,44 @@ function originalImage(candidate: string, pageUrl: URL, provider: Provider): URL
   return allowedImage(url, provider) ? url : undefined;
 }
 
-function metadata(html: string, pageUrl: URL, provider: Provider): { name: string; imageUrl: URL } {
+/** Providers display times in JST. Keep the wall-clock value for datetime-local. */
+function normalizeSchedule(date: unknown, startTime: unknown): string | undefined {
+  if (typeof date !== "string" || typeof startTime !== "string") return undefined;
+  const text = date.normalize("NFKC").trim();
+  const day = /^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:\s*\([日月火水木金土](?:曜日)?\))?$/u.exec(text)
+    ?? /^(\d{4})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})$/u.exec(text);
+  const time = /^(\d{1,2})\s*:\s*(\d{2})$/u.exec(startTime.normalize("NFKC").trim());
+  if (!day || !time) return undefined;
+  const [, year, month, dateOfMonth] = day;
+  const [, hours, minutes] = time;
+  const startsAt = `${year}-${month.padStart(2, "0")}-${dateOfMonth.padStart(2, "0")}T${hours.padStart(2, "0")}:${minutes}`;
+  return localDateTime.safeParse(startsAt).success ? startsAt : undefined;
+}
+
+function eventSchedule($: ReturnType<typeof load>, provider: Provider): string | undefined {
+  if (provider === "livepocket") {
+    for (const list of $(".event-detail-info__list")) {
+      const details = $(list);
+      const date = details.find(".event-detail-info__date").first().closest("dt").next("dd").text();
+      const time = details.find(".event-detail-info__time").first().closest("dt").next("dd");
+      const startTime = time.find(".event-detail-info-time__title")
+        .filter((_, label) => /^開演(?:時(?:間|刻))?$/u.test($(label).text().trim()))
+        .first().next(".event-detail-info-time__date").text();
+      const startsAt = normalizeSchedule(date, startTime);
+      if (startsAt) return startsAt;
+    }
+    return undefined;
+  }
+
+  const details = $('span[class*="Typography_root__"]')
+    .filter((_, label) => $(label).text().trim() === "公演日時")
+    .first().next("span").text().normalize("NFKC");
+  const date = /^\s*(\d{4}\s*\/\s*\d{1,2}\s*\/\s*\d{1,2})(?!\d)/u.exec(details)?.[1];
+  const startTime = /開演(?:時(?:間|刻))?\s*:?\s*(\d{1,2}\s*:\s*\d{2})(?![\d:])/u.exec(details)?.[1];
+  return normalizeSchedule(date, startTime);
+}
+
+function metadata(html: string, pageUrl: URL, provider: Provider): { name: string; imageUrl: URL; startsAt?: string } {
   const $ = load(html);
   const titleSelector = provider === "ticketdive" ? '[class*="EventInfoUnit_name__"]' : "h1.heading01";
   let name = $(titleSelector).first().text().replace(/\s+/gu, " ").trim();
@@ -95,7 +135,7 @@ function metadata(html: string, pageUrl: URL, provider: Provider): { name: strin
   }
   const imageUrl = candidates.map(candidate => originalImage(candidate, pageUrl, provider)).find(Boolean);
   if (!imageUrl) throw new EventImportError("The event's original image could not be found. Add an image manually.", 422);
-  return { name, imageUrl };
+  return { name, imageUrl, startsAt: eventSchedule($, provider) };
 }
 
 async function cancel(response: Response): Promise<void> {
@@ -212,9 +252,9 @@ async function requestBrowserImport(url: string, signal: AbortSignal): Promise<u
   return JSON.parse((await readBody(response, Math.ceil(IMAGE_LIMIT / 3) * 4 + 8192, "image")).toString("utf8"));
 }
 
-function validateBrowserImport(raw: unknown): { name: string; image: Buffer; contentType: string; extension: string } {
+function validateBrowserImport(raw: unknown): ImportedEvent {
   if (!raw || typeof raw !== "object") throw new EventImportChallengeError();
-  const { name, image: encoded, contentType, extension } = raw as Record<string, unknown>;
+  const { name, image: encoded, contentType, extension, date, startTime } = raw as Record<string, unknown>;
   if (typeof name !== "string" || !name.trim() || name.trim().length > 200 ||
       typeof encoded !== "string" || encoded.length > Math.ceil(IMAGE_LIMIT / 3) * 4 ||
       encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
@@ -225,11 +265,12 @@ function validateBrowserImport(raw: unknown): { name: string; image: Buffer; con
   if (image.length > IMAGE_LIMIT || !format || format.contentType !== contentType || format.extension !== extension) {
     throw new EventImportChallengeError();
   }
-  return { name: name.trim(), image, ...format };
+  const startsAt = normalizeSchedule(date, startTime);
+  return { name: name.trim(), image, ...format, ...(startsAt ? { startsAt } : {}) };
 }
 
 /** Retrieve metadata and the unmodified original image without browser cookies. */
-export async function fetchEventImport(input: string, options: { fetch?: Fetch; browserImport?: BrowserImport } = {}): Promise<{ name: string; image: Buffer; contentType: string; extension: string }> {
+export async function fetchEventImport(input: string, options: { fetch?: Fetch; browserImport?: BrowserImport } = {}): Promise<ImportedEvent> {
   let url: URL;
   try {
     if (typeof input !== "string" || input.length > 2048) throw new Error("Invalid URL");
@@ -249,7 +290,7 @@ export async function fetchEventImport(input: string, options: { fetch?: Fetch; 
       await cancel(page.response);
       throw new EventImportError("The ticket provider did not return an event page.", 502);
     }
-    const { name, imageUrl } = metadata((await readBody(page.response, HTML_LIMIT, "page")).toString("utf8"), page.url, provider);
+    const { name, imageUrl, startsAt } = metadata((await readBody(page.response, HTML_LIMIT, "page")).toString("utf8"), page.url, provider);
     const { response } = await request(imageUrl, provider, "image", fetcher, controller.signal);
     const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
     if (!["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"].includes(contentType ?? "")) {
@@ -259,7 +300,7 @@ export async function fetchEventImport(input: string, options: { fetch?: Fetch; 
     const image = await readBody(response, IMAGE_LIMIT, "image");
     const format = rasterFormat(image);
     if (!format || format.contentType !== contentType) throw new EventImportError("The event image content does not match its image format.", 422);
-    return { name, image, ...format };
+    return { name, image, ...format, ...(startsAt ? { startsAt } : {}) };
   } catch (error) {
     if (error instanceof EventImportChallengeError && provider === "livepocket" && (options.browserImport || process.env.DAIKO_BROWSER_IMPORT_URL)) {
       try {

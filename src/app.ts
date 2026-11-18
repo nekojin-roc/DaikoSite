@@ -137,7 +137,7 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     const { url } = z.object({ url: z.string().trim().min(1).max(2048) }).strict().parse(request.body);
     const imported = await importEvent(url);
     const imageUrl = await saveEventImage(imageDirectory, imported.image, imported.contentType);
-    return { name: imported.name, imageUrl };
+    return { name: imported.name, imageUrl, startsAt: imported.startsAt };
   });
   app.get<{ Params: { filename: string } }>("/api/event-images/:filename", { preHandler: auth }, async (request, reply) => {
     const image = await openEventImage(imageDirectory, request.params.filename);
