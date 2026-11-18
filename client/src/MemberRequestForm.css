@@ -13,3 +13,32 @@
 .pickles .request-form select:focus-visible,.pickles .member-request-kind .type-option:focus-visible{outline-color:#789b4b}
 .pickles .member-request-notice{background:#f5f8e5;color:#654b3c}
 .pickles .member-request-kind legend{color:#503226}
+
+.request-draft-queue {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.request-card-heading,
+.request-card-heading .text-button,
+.request-queue-actions {
+  display: flex;
+  align-items: center;
+}
+.request-card-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+.request-card-heading .text-button {
+  gap: 5px;
+}
+.request-draft-queue .panel > label:last-child {
+  margin-bottom: 0;
+}
+.request-queue-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.request-queue-actions > :first-child {
+  margin-inline-end: auto;
+}

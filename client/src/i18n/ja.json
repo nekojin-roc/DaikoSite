@@ -1,4 +1,11 @@
 {
+  "Request {{number}}": "リクエスト {{number}}",
+  "Remove request {{number}}": "リクエスト {{number}} を削除",
+  "Add another request": "リクエストを追加",
+  "Images in one submission must total 5 MiB or less.": "一度に送信する画像の合計サイズは5 MiB以下にしてください。",
+  "You can add up to {{count}} requests at a time.": "一度に追加できるリクエストは{{count}}件までです。",
+  "Your requests have been submitted. You can find them in My requests.": "リクエストを送信しました。「マイリクエスト」で確認できます。",
+  "submitRequestCount_other": "{{count}}件のリクエストを送信",
   "YOUR SPACE": "マイスペース",
   "MANAGE": "管理",
   "Main navigation": "メインナビゲーション",

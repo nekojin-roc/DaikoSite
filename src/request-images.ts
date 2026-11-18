@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rm } from "node:fs/promises";
 import path from "node:path";
 
 const maxBytes = 5 * 1024 * 1024;
@@ -26,7 +26,14 @@ export function decodeRequestImage(image: { mimeType: string; data: string }) {
 export async function saveRequestImage(directory: string, image: ReturnType<typeof decodeRequestImage>) {
   await mkdir(directory, { recursive: true });
   const filename = `${randomUUID()}.${image.ext}`;
-  await writeFile(path.join(directory, filename), image.bytes, { flag: "wx" });
+  const filepath = path.join(directory, filename);
+  const file = await open(filepath, "wx");
+  try {
+    await file.writeFile(image.bytes).finally(() => file.close());
+  } catch (error) {
+    await rm(filepath, { force: true });
+    throw error;
+  }
   return filename;
 }
 export async function removeRequestImage(directory: string, filename: string) {
