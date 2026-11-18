@@ -1,4 +1,12 @@
 {
+  "Request {{number}}": "Request {{number}}",
+  "Remove request {{number}}": "Remove request {{number}}",
+  "Add another request": "Add another request",
+  "Images in one submission must total 5 MiB or less.": "Images in one submission must total 5 MiB or less.",
+  "You can add up to {{count}} requests at a time.": "You can add up to {{count}} requests at a time.",
+  "Your requests have been submitted. You can find them in My requests.": "Your requests have been submitted. You can find them in My requests.",
+  "submitRequestCount_one": "Submit {{count}} request",
+  "submitRequestCount_other": "Submit {{count}} requests",
   "YOUR SPACE": "YOUR SPACE",
   "MANAGE": "MANAGE",
   "Main navigation": "Main navigation",

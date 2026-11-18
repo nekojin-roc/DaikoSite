@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import i18n, { changeLanguage, supportedLanguage, type Language } from './i18n/config';
 import { appearances, useAppearance } from './Appearance';
 import GroupManagement, { type Group } from './GroupManagement';
-import MemberRequestForm from './MemberRequestForm';
+import MemberRequestForm, { type MemberRequestPayload } from './MemberRequestForm';
 import { nextJstDay, startOfJstDay } from './event-day';
 import { version } from '../package.json';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react';
@@ -80,6 +80,25 @@ function App() {
   const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); setQueueEvent(null); setQueue([]); setEvents([]); setGroups([]); setMyRequests([]); setShowCreate(false); setNotice(''); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
   const navigate = (next: View) => {setView(next); setSelected(null); setQueueEvent(null); setShowCreate(false); setError(''); setNotice('');};
   const selectQueue = async (event: Event) => {setQueueEvent(event); setQueue([]); setError(''); setBusy(true); try {const result = await api<{requests: RequestItem[]}>(`/daiko-api/events/${event.id}/requests`); setQueue(result.requests);} catch(e){setError(errorText(e));} finally {setBusy(false);} };
+  const submitRequests = async (event: Event, requests: MemberRequestPayload[]) => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await post<{ requests: RequestItem[] }>(
+        `/daiko-api/events/${encodeURIComponent(event.id)}/requests/batch`, { requests }
+      );
+      setMyRequests(current => [...current, ...result.requests.map(item => ({...item, event}))]);
+      setEvents(current => current.map(item => item.id === event.id
+        ? {...item, requestCount: item.requestCount + result.requests.length}
+        : item));
+      setSelected(null);
+      setNotice(result.requests.length === 1
+        ? 'Your request has been submitted. You can find it in My requests.'
+        : 'Your requests have been submitted. You can find them in My requests.');
+    } finally {
+      setBusy(false);
+    }
+  };
   const finishRequest = async (id: string) => {
     if (finishingId) return;
     setFinishingId(id);
@@ -123,7 +142,7 @@ function App() {
         {error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}<button aria-label={t("Dismiss")} onClick={() => setError('')}><X size={16}/></button></div>}
         {notice && <div className="alert success" role="status"><Check size={17}/>{t(notice, {defaultValue: notice})}<button aria-label={t("Dismiss")} onClick={() => setNotice('')}><X size={16}/></button></div>}
         {view === 'events' && !selected && <><div className="page-heading"><div><h1>{t("Find your next event")}</h1></div></div><div className="section-heading"><div><h2>{t("Events")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No events yet")} text={t("Events will appear here once they’ve been added.")}/>}</div></>}
-        {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={async payload => {setBusy(true); setError(''); try {await post(`/daiko-api/events/${selected.id}/requests`, payload); await Promise.all([loadEvents(), loadMyRequests()]); setSelected(null); setNotice('Your request has been submitted. You can find it in My requests.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
+        {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={requests => submitRequests(selected, requests)}/>}
         {view === 'requests' && <><div className="page-heading"><div><h1>{t("My requests")}</h1></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> {t("New request")}</button></div><div className="section-heading"><div><h2>{t("Request history")}</h2></div><span className="count">{t('totalCount', {count: myRequests.length})}</span></div><div className="request-list">{myRequests.length ? myRequests.map(request => <RequestCard key={request.id} request={request}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("Nothing here yet")} text={t("Once you submit a request, you’ll see it here.")}/>}</div></>}
         {admin && view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading admin-event-heading"><div><h1>{t("Event management")}</h1></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> {t("Add event")}</button></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No upcoming events")} text={t("Add an event to start receiving requests.")}/>}</div></>}
         {admin && view === 'past' && !queueEvent && <><div className="page-heading"><div><h1>{t("Past events")}</h1></div></div><div className="section-heading"><div><h2>{t("Event history")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{pastEvents.length ? pastEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<History size={22}/>} title={t("No past events")} text={t("Past events will appear here.")}/>}</div></>}
@@ -154,9 +173,11 @@ function Settings({onManageGroups}: {onManageGroups?: () => void}) {
   return <><div className="page-heading"><h1>{t('Settings')}</h1></div><section className="panel settings-panel" aria-labelledby="preferences-title">
     <div className="panel-title"><h2 id="preferences-title">{t('Preferences')}</h2></div>
     <div className="settings-field"><div><label htmlFor="preferred-language">{t('Language')}</label></div>
-      <select id="preferred-language" value={supportedLanguage(currentI18n.resolvedLanguage ?? currentI18n.language)} onChange={event => void changeLanguage(event.target.value as Language)}>
-        <option value="en" lang="en">English</option><option value="zh" lang="zh">中文</option><option value="ja" lang="ja">日本語</option>
-      </select>
+      <div className="language-select">
+        <select id="preferred-language" value={supportedLanguage(currentI18n.resolvedLanguage ?? currentI18n.language)} onChange={event => void changeLanguage(event.target.value as Language)}>
+          <option value="en" lang="en">English</option><option value="zh" lang="zh">中文</option><option value="ja" lang="ja">日本語</option>
+        </select>
+      </div>
     </div>
     <div className="settings-field"><div><span id="appearance-label" className="settings-label">{t('Appearance')}</span></div>
       <div className="appearance-toggle" role="group" aria-labelledby="appearance-label">{appearances.map(value => <button type="button" key={value} aria-pressed={appearance === value} className={appearance === value ? 'selected' : ''} onClick={() => setAppearance(value)}>{t(labels[value])}</button>)}</div>

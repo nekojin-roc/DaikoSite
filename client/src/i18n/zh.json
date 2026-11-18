@@ -1,4 +1,11 @@
 {
+  "Request {{number}}": "请求 {{number}}",
+  "Remove request {{number}}": "移除请求 {{number}}",
+  "Add another request": "再添加一个请求",
+  "Images in one submission must total 5 MiB or less.": "每次提交的图片总大小不能超过 5 MiB。",
+  "You can add up to {{count}} requests at a time.": "每次最多可以添加 {{count}} 个请求。",
+  "Your requests have been submitted. You can find them in My requests.": "请求已提交，可在「我的请求」中查看。",
+  "submitRequestCount_other": "提交 {{count}} 个请求",
   "YOUR SPACE": "个人空间",
   "MANAGE": "管理",
   "Main navigation": "主导航",

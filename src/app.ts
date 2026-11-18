@@ -4,7 +4,8 @@ import { z } from "zod";
 import type { Identity, IdentityResolver } from "./identity.js";
 import path from "node:path";
 import { EventImportError, fetchEventImport } from "./event-import.js";
-import { decodeRequestImage, InvalidRequestImage, openRequestImage, removeRequestImage, saveRequestImage } from "./request-images.js";
+import { InvalidRequestImage, openRequestImage, removeRequestImage } from "./request-images.js";
+import { batchInput, createRequests, requestInput, RequestSubmissionError } from "./request-submission.js";
 import { hasEventImage, localImageFilename, openEventImage, saveEventImage } from "./event-images.js";
 
 type User = Identity & { role: "ADMIN" | "USER" };
@@ -16,11 +17,6 @@ const eventInput = z.object({
   startsAt: z.string().datetime({ offset: true }),
   imageUrl: z.union([z.string().trim().url().refine(value => /^https?:\/\//i.test(value)), z.string().refine(value => localImageFilename(value) !== null), z.literal(""), z.null()]).optional(),
 }).strict().refine(input => Boolean(input.groupId || input.groupName));
-const requestInput = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("CHEKI"), amount: z.number().int().min(1).max(1000), message: z.string().trim().min(1).max(5000) }).strict(),
-  z.object({ type: z.literal("GOODS"), amount: z.null().optional(), message: z.string().trim().min(1).max(5000) }).strict(),
-]);
-const customRequestInput = z.object({ memberId: z.string().min(1), offeringId: z.string().min(1), amount: z.number().int().min(1).max(1000).nullable().optional(), message: z.string().trim().min(1).max(5000), image: z.object({ mimeType: z.string(), data: z.string() }).strict().optional() }).strict();
 const nameInput = z.object({ name: z.string().trim().min(1).max(200) }).strict();
 const eventSelect = { id: true, name: true, groupName: true, groupId: true, startsAt: true, imageUrl: true, _count: { select: { requests: { where: { finishedAt: null } } } } } as const;
 function eventView(event: { id: string; name: string; groupName: string; groupId: string | null; startsAt: Date; imageUrl: string | null; _count: { requests: number } }) {
@@ -54,6 +50,7 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
   });
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof z.ZodError) return reply.code(400).send({ error: "Invalid input", details: error.flatten() });
+    if (error instanceof RequestSubmissionError) return reply.code(error.statusCode).send({ error: error.message });
     if (error instanceof InvalidRequestImage) return reply.code(400).send({ error: "Invalid image; use a JPEG, PNG, WebP, or GIF up to 5 MiB" });
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") return reply.code(409).send({ error: "A name already exists" });
     if (error instanceof EventImportError) return reply.code(error.statusCode).send({ error: error.message });
@@ -189,36 +186,16 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     if (!updated.count && !await options.prisma.request.findUnique({ where: { id: request.params.id }, select: { id: true } })) return reply.code(404).send({ error: "Request not found" });
     return reply.code(204).send();
   });
-  app.post<{ Params: { id: string } }>("/api/events/:id/requests", { preHandler: auth, bodyLimit: 8 * 1024 * 1024 }, async (request, reply) => {
-    const event = await options.prisma.event.findUnique({ where: { id: request.params.id }, select: { id: true, groupId: true } });
-    if (!event) return reply.code(404).send({ error: "Event not found" });
-    const user = request.daikoUser!;
-    const body = request.body as Record<string, unknown> | null;
-    if (body && "type" in body) {
-      const input = requestInput.parse(body);
-      const item = await options.prisma.request.create({ data: { eventId: event.id, type: input.type, amount: input.type === "CHEKI" ? input.amount : null, message: input.message, userId: user.id, userName: user.name, userEmail: user.email } });
-      return reply.code(201).send(requestView(item));
-    }
-    const input = customRequestInput.parse(request.body);
-    const imageFile = input.image ? await saveRequestImage(requestImageDirectory, decodeRequestImage(input.image)) : null;
-    try {
-      const item = await options.prisma.$transaction(async tx => {
-        const [member, offering] = await Promise.all([
-          tx.member.findFirst({ where: { id: input.memberId, groupId: event.groupId ?? "" } }),
-          tx.offering.findFirst({ where: { id: input.offeringId, groupId: event.groupId ?? "", archived: false } }),
-        ]);
-        if (!member || !offering) return null;
-        return tx.request.create({ data: { eventId: event.id, type: "CUSTOM", memberName: member.name, offeringName: offering.name, amount: input.amount ?? null, message: input.message, imageFile, userId: user.id, userName: user.name, userEmail: user.email } });
-      });
-      if (!item) {
-        if (imageFile) await removeRequestImage(requestImageDirectory, imageFile);
-        return reply.code(400).send({ error: "Select a valid member and offering for this event" });
-      }
-      return reply.code(201).send(requestView(item));
-    } catch (error) {
-      if (imageFile) await removeRequestImage(requestImageDirectory, imageFile);
-      throw error;
-    }
+  const submitOptions = { preHandler: auth, bodyLimit: 8 * 1024 * 1024 };
+  app.post<{ Params: { id: string } }>("/api/events/:id/requests", submitOptions, async (request, reply) => {
+    const inputs = [requestInput.parse(request.body)];
+    const [item] = await createRequests(options.prisma, requestImageDirectory, request.params.id, request.daikoUser!, inputs);
+    return reply.code(201).send(requestView(item));
+  });
+  app.post<{ Params: { id: string } }>("/api/events/:id/requests/batch", submitOptions, async (request, reply) => {
+    const { requests } = batchInput.parse(request.body);
+    const items = await createRequests(options.prisma, requestImageDirectory, request.params.id, request.daikoUser!, requests);
+    return reply.code(201).send({ requests: items.map(requestView) });
   });
   app.get<{ Params: { id: string } }>("/api/requests/:id/image", { preHandler: auth }, async (request, reply) => {
     const item = await options.prisma.request.findUnique({ where: { id: request.params.id }, select: { imageFile: true, userId: true } });
