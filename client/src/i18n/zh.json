@@ -121,6 +121,7 @@
   "The event title is longer than 200 characters. Enter a shorter title manually.": "活动标题超过 200 个字符，请手动输入较短的标题。",
   "The event's original image could not be found. Add an image manually.": "未找到活动原始图片，请手动添加图片。",
   "The ticket provider could not be reached or blocked automatic access. Try again or enter the event manually.": "无法连接票务网站或自动访问被阻止，请重试或手动输入。",
+  "The ticket provider blocked automatic access.": "票务网站阻止了自动访问。",
   "The ticket provider took too long to respond. Try again or enter the event manually.": "票务网站响应超时，请重试或手动输入。",
   "The ticket provider could not be reached. Try again or enter the event manually.": "无法连接票务网站，请重试或手动输入。",
   "The event page is no longer available.": "活动页面已不可用。",

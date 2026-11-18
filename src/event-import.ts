@@ -16,6 +16,10 @@ export class EventImportError extends Error {
   }
 }
 
+class EventImportChallengeError extends EventImportError {
+  constructor() { super("The ticket provider blocked automatic access.", 502); }
+}
+
 function secureUrl(url: URL): boolean {
   return url.protocol === "https:" && !url.username && !url.password && !url.port;
 }
@@ -116,6 +120,18 @@ async function request(
         "user-agent": "Daiko/0.1 (event importer)",
       },
     });
+    // Some ticket providers respond to automated requests with HTTP 202 (or
+    // even 200) and an AWS WAF challenge rather than an event page. Treat the
+    // challenge as an access block before attempting to parse its empty HTML.
+    const wafAction = response.headers.get("x-amzn-waf-action")?.toLowerCase().trim();
+    if (wafAction === "challenge" || wafAction === "captcha") {
+      await cancel(response);
+      throw new EventImportChallengeError();
+    }
+    if (response.status === 202) {
+      await cancel(response);
+      throw new EventImportError("The ticket provider could not be reached or blocked automatic access. Try again or enter the event manually.", 502);
+    }
     if (redirectStatuses.has(response.status)) {
       const location = response.headers.get("location");
       await cancel(response);
@@ -180,8 +196,40 @@ function rasterFormat(bytes: Buffer): { contentType: string; extension: string }
   return undefined;
 }
 
+type BrowserImport = (url: string, signal: AbortSignal) => Promise<unknown>;
+
+/** Ask the isolated browser service to process the provider's normal challenge. */
+async function requestBrowserImport(url: string, signal: AbortSignal): Promise<unknown> {
+  const endpoint = process.env.DAIKO_BROWSER_IMPORT_URL;
+  if (!endpoint) throw new EventImportChallengeError();
+  const response = await fetch(endpoint, {
+    method: "POST", redirect: "error", signal,
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!response.ok) { await cancel(response); throw new EventImportChallengeError(); }
+  // Base64 expands the bounded image by 4/3; bound the JSON before decoding.
+  return JSON.parse((await readBody(response, Math.ceil(IMAGE_LIMIT / 3) * 4 + 8192, "image")).toString("utf8"));
+}
+
+function validateBrowserImport(raw: unknown): { name: string; image: Buffer; contentType: string; extension: string } {
+  if (!raw || typeof raw !== "object") throw new EventImportChallengeError();
+  const { name, image: encoded, contentType, extension } = raw as Record<string, unknown>;
+  if (typeof name !== "string" || !name.trim() || name.trim().length > 200 ||
+      typeof encoded !== "string" || encoded.length > Math.ceil(IMAGE_LIMIT / 3) * 4 ||
+      encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+    throw new EventImportChallengeError();
+  }
+  const image = Buffer.from(encoded, "base64");
+  const format = rasterFormat(image);
+  if (image.length > IMAGE_LIMIT || !format || format.contentType !== contentType || format.extension !== extension) {
+    throw new EventImportChallengeError();
+  }
+  return { name: name.trim(), image, ...format };
+}
+
 /** Retrieve metadata and the unmodified original image without browser cookies. */
-export async function fetchEventImport(input: string, options: { fetch?: Fetch } = {}): Promise<{ name: string; image: Buffer; contentType: string; extension: string }> {
+export async function fetchEventImport(input: string, options: { fetch?: Fetch; browserImport?: BrowserImport } = {}): Promise<{ name: string; image: Buffer; contentType: string; extension: string }> {
   let url: URL;
   try {
     if (typeof input !== "string" || input.length > 2048) throw new Error("Invalid URL");
@@ -213,6 +261,14 @@ export async function fetchEventImport(input: string, options: { fetch?: Fetch }
     if (!format || format.contentType !== contentType) throw new EventImportError("The event image content does not match its image format.", 422);
     return { name, image, ...format };
   } catch (error) {
+    if (error instanceof EventImportChallengeError && provider === "livepocket" && (options.browserImport || process.env.DAIKO_BROWSER_IMPORT_URL)) {
+      try {
+        return validateBrowserImport(await (options.browserImport ?? requestBrowserImport)(url.href, controller.signal));
+      } catch {
+        if (controller.signal.aborted) throw new EventImportError("The ticket provider took too long to respond. Try again or enter the event manually.", 504);
+        throw error;
+      }
+    }
     if (error instanceof EventImportError) throw error;
     if (controller.signal.aborted || (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name))) {
       throw new EventImportError("The ticket provider took too long to respond. Try again or enter the event manually.", 504);

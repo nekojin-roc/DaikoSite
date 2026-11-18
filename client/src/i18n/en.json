@@ -122,6 +122,7 @@
   "The event title is longer than 200 characters. Enter a shorter title manually.": "The event title is longer than 200 characters. Enter a shorter title manually.",
   "The event's original image could not be found. Add an image manually.": "The event's original image could not be found. Add an image manually.",
   "The ticket provider could not be reached or blocked automatic access. Try again or enter the event manually.": "The ticket provider could not be reached or blocked automatic access. Try again or enter the event manually.",
+  "The ticket provider blocked automatic access.": "The ticket provider blocked automatic access.",
   "The ticket provider took too long to respond. Try again or enter the event manually.": "The ticket provider took too long to respond. Try again or enter the event manually.",
   "The ticket provider could not be reached. Try again or enter the event manually.": "The ticket provider could not be reached. Try again or enter the event manually.",
   "The event page is no longer available.": "The event page is no longer available.",

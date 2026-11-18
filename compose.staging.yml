@@ -12,6 +12,7 @@ services:
       DAIKO_EVENT_IMAGE_DIR: /app/data/event-images
       DAIKO_REQUEST_IMAGE_DIR: /app/data/request-images
       PARCELHUB_URL: http://parcelhub-server-1:3001
+      DAIKO_BROWSER_IMPORT_URL: http://livepocket-browser:3003/import
       DAIKO_ADMIN_EMAILS: ${DAIKO_ADMIN_EMAILS:?Set DAIKO_ADMIN_EMAILS in a private env file}
       DAIKO_ALLOWED_ORIGINS: https://daiko.nekoj.in
       HOST: 0.0.0.0
@@ -21,6 +22,38 @@ services:
     networks:
       default:
         aliases: [daiko-staging-api]
+      browser-internal: {}
+  livepocket-browser:
+    build:
+      context: ./browser-service
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    shm_size: 256m
+    mem_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./deploy/browser-seccomp.json
+    networks:
+      browser-internal: {}
+  browser-proxy:
+    build:
+      context: ./browser-proxy
+    restart: unless-stopped
+    init: true
+    read_only: true
+    mem_limit: 128m
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      browser-internal: {}
+      browser-egress: {}
   staging-web:
     build:
       context: .
@@ -39,4 +72,7 @@ networks:
   default:
     external: true
     name: parcelhub_default
+  browser-internal:
+    internal: true
+  browser-egress: {}
 

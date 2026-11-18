@@ -121,6 +121,7 @@
   "The event title is longer than 200 characters. Enter a shorter title manually.": "イベント名が200文字を超えています。短い名前を手動で入力してください。",
   "The event's original image could not be found. Add an image manually.": "イベントの元画像が見つかりません。手動で画像を追加してください。",
   "The ticket provider could not be reached or blocked automatic access. Try again or enter the event manually.": "チケットサイトに接続できないか、自動アクセスが拒否されました。再試行するか手動で入力してください。",
+  "The ticket provider blocked automatic access.": "チケットサイトが自動アクセスを拒否しました。",
   "The ticket provider took too long to respond. Try again or enter the event manually.": "チケットサイトの応答がタイムアウトしました。再試行するか手動で入力してください。",
   "The ticket provider could not be reached. Try again or enter the event manually.": "チケットサイトに接続できません。再試行するか手動で入力してください。",
   "The event page is no longer available.": "イベントページは利用できません。",

@@ -4,6 +4,8 @@
 
 ParcelHub is the identity provider. Daiko uses the same account credentials, with a separate host-scoped browser session. After registration, ParcelHub establishes the Daiko session through the sign-in proxy before returning the user. The proxy accepts sign-in only from the Daiko and ParcelHub browser origins, and sign-out only from Daiko. Signup and password recovery remain on ParcelHub.
 
+LivePocket imports first use the regular HTTP importer. If LivePocket presents its browser challenge, the API may use the isolated `livepocket-browser` service. It has no application data volumes, credentials, host port, or direct internet network; its requests go through `browser-proxy`, which permits only the provider and its challenge hosts. Each import uses a fresh browser session. The service handles silent challenges, not an interactive CAPTCHA; the user can enter details manually if the provider still blocks access. The Chromium seccomp profile is based on Playwright 1.65.1's profile with an added `chroot` allowance for the browser sandbox; its upstream license is in `deploy/playwright-license.txt`.
+
 For an update, prepare a release directory with the intended source and a private `.env` containing `DAIKO_ADMIN_EMAILS`. `compose.staging.yml` is the production Compose file despite its historical name, and mounts `deploy/staging-app-nginx.conf` for the application. Validate configuration and build images before stopping any service:
 
 ```sh

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { EventImportError, fetchEventImport } from '../dist/event-import.js';
 
 const TICKET_URL = 'https://ticketdive.com/event/kuruidaore15';
@@ -175,6 +176,78 @@ test('returns actionable errors for missing pages, provider access blocks, netwo
   await assert.rejects(fetchEventImport(LIVE_URL, { fetch: async () => { throw new TypeError('fetch failed'); } }), errorStatus(502));
   await assert.rejects(fetchEventImport(LIVE_URL, { fetch: async () => { throw new DOMException('timed out', 'TimeoutError'); } }), errorStatus(504));
   await assert.rejects(fetchEventImport(LIVE_URL, { fetch: async () => new Response('{}', { headers: { 'content-type': 'application/json' } }) }), errorStatus(502, /page/i));
+});
+
+test('reports provider security challenges instead of claiming event metadata is missing', async () => {
+  for (const [status, action, body] of [
+    [202, 'challenge', ''], // LivePocket currently returns an empty 202 challenge.
+    [200, 'challenge', '<html><title>Verification required</title></html>'],
+    [405, 'captcha', '<html>Captcha required</html>'],
+  ]) {
+    const { fetch, calls } = mockFetch({
+      [LIVE_URL]: new Response(body, { status, headers: { 'content-type': 'text/html', 'x-amzn-waf-action': action } }),
+    });
+    await assert.rejects(fetchEventImport(LIVE_URL, { fetch }), errorStatus(502, /blocked automatic access/i));
+    assert.deepEqual(calls.map(call => call.url), [LIVE_URL]);
+  }
+  await assert.rejects(fetchEventImport(LIVE_URL, {
+    fetch: async () => new Response('', { status: 202, headers: { 'content-type': 'text/html' } }),
+  }), errorStatus(502, /could not be reached or blocked/i));
+  const { fetch, calls } = mockFetch({
+    [LIVE_URL]: page(liveHtml()),
+    [LIVE_IMAGE]: new Response('', { status: 202, headers: { 'x-amzn-waf-action': 'challenge' } }),
+  });
+  await assert.rejects(fetchEventImport(LIVE_URL, { fetch }), errorStatus(502, /blocked automatic access/i));
+  assert.deepEqual(calls.map(call => call.url), [LIVE_URL, LIVE_IMAGE]);
+});
+
+test('uses the isolated browser only for LivePocket challenges and validates its result', async () => {
+  const challenge = () => new Response('', { status: 202, headers: { 'x-amzn-waf-action': 'challenge' } });
+  const valid = { name: 'Event & Friends', image: WEBP.toString('base64'), contentType: 'image/webp', extension: '.webp' };
+  let calls = 0;
+  const browserImport = async (url, signal) => {
+    calls++;
+    assert.equal(url, LIVE_URL);
+    assert.ok(signal instanceof AbortSignal);
+    return valid;
+  };
+  assert.deepEqual(await fetchEventImport(LIVE_URL, { fetch: challenge, browserImport }), { name: valid.name, image: WEBP, contentType: valid.contentType, extension: valid.extension });
+  assert.equal(calls, 1);
+  await assert.rejects(fetchEventImport(TICKET_URL, { fetch: challenge, browserImport }), errorStatus(502));
+  assert.equal(calls, 1);
+  for (const bad of [
+    { ...valid, image: 'not base64!' },
+    { ...valid, image: Buffer.from('not an image').toString('base64') },
+    { ...valid, contentType: 'image/png' },
+    { ...valid, name: ' '.repeat(5) },
+    { ...valid, name: 'x'.repeat(201) },
+  ]) {
+    await assert.rejects(fetchEventImport(LIVE_URL, { fetch: challenge, browserImport: async () => bad }), errorStatus(502, /blocked automatic access/i));
+  }
+  await assert.rejects(fetchEventImport(LIVE_URL, { fetch: challenge, browserImport: async () => { throw new Error('unavailable'); } }), errorStatus(502, /blocked automatic access/i));
+});
+
+test('calls the configured internal browser service after a LivePocket challenge', async () => {
+  const previous = process.env.DAIKO_BROWSER_IMPORT_URL;
+  let received;
+  const service = http.createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    received = { method: request.method, url: request.url, body: JSON.parse(Buffer.concat(chunks).toString()) };
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ name: 'Browser event', image: WEBP.toString('base64'), contentType: 'image/webp', extension: '.webp' }));
+  });
+  await new Promise(resolve => service.listen(0, '127.0.0.1', resolve));
+  process.env.DAIKO_BROWSER_IMPORT_URL = `http://127.0.0.1:${service.address().port}/import`;
+  try {
+    const result = await fetchEventImport(LIVE_URL, { fetch: async () => new Response('', { status: 202, headers: { 'x-amzn-waf-action': 'challenge' } }) });
+    assert.equal(result.name, 'Browser event');
+    assert.deepEqual(result.image, WEBP);
+    assert.deepEqual(received, { method: 'POST', url: '/import', body: { url: LIVE_URL } });
+  } finally {
+    if (previous === undefined) delete process.env.DAIKO_BROWSER_IMPORT_URL; else process.env.DAIKO_BROWSER_IMPORT_URL = previous;
+    await new Promise((resolve, reject) => service.close(error => error ? reject(error) : resolve()));
+  }
 });
 
 test('requires raster MIME and matching magic bytes, rejecting SVG and disguised HTML', async () => {
