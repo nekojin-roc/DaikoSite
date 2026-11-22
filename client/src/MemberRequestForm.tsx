@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight, CalendarDays, Clock3, Plus, Trash2 } from 'lucide-react';
+import { MAX_REQUEST_IMAGE_BYTES, REQUEST_IMAGE_ACCEPT, readRequestImage, requestImageError, type RequestImage } from './request-image';
 import './MemberRequestForm.css';
 
 type RequestEvent = { id: string; name: string; groupName: string; groupId: string | null; startsAt: string; imageUrl: string | null };
 type Group = { id: string; name: string; members: { id: string; name: string }[]; offerings: { id: string; name: string }[] };
-export type MemberRequestPayload = { memberId: string; offeringId: string; message: string; amount?: number | null; image?: { mimeType: string; data: string } } | { type: 'GOODS'; message: string };
+export type MemberRequestPayload = { memberId: string; offeringId: string; message: string; amount?: number | null; image?: RequestImage } | { type: 'GOODS'; message: string };
 
 type Props = { event: RequestEvent; group: Group | undefined; onBack: () => void; onSubmit: (requests: MemberRequestPayload[]) => Promise<void>; busy: boolean };
 type Draft = {
@@ -20,8 +21,6 @@ type Draft = {
 };
 type DraftChanges = Partial<Omit<Draft, 'id'>>;
 const MAX_CARDS = 10;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function newDraft(id: number): Draft {
   return { id, kind: 'MEMBER', memberId: '', offeringId: '', message: '', amount: '1', image: null, imageError: '' };
@@ -34,19 +33,6 @@ function isComplete(draft: Draft, group: Group | undefined) {
     group?.members.some(member => member.id === draft.memberId) &&
     group.offerings.some(offering => offering.id === draft.offeringId) &&
     /^\d+$/.test(draft.amount) && Number(draft.amount) >= 1 && Number(draft.amount) <= 1000;
-}
-
-function readImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    const fail = () => reject(new Error('Could not read the image. Please try again.'));
-    reader.onload = () => {
-      if (typeof reader.result !== 'string' || !reader.result.includes(',')) return fail();
-      resolve(reader.result.slice(reader.result.indexOf(',') + 1));
-    };
-    reader.onerror = reader.onabort = fail;
-    reader.readAsDataURL(file);
-  });
 }
 
 type CardProps = {
@@ -77,9 +63,7 @@ function RequestDraftCard({ draft, number, group, disabled, onChange, onRemove }
   }, [image]);
 
   function selectImage(file?: File) {
-    let error = '';
-    if (file && !IMAGE_TYPES.has(file.type)) error = 'Please choose a JPEG, PNG, WebP, or GIF image.';
-    else if (file && file.size > MAX_IMAGE_BYTES) error = 'The image must be 5 MiB or smaller.';
+    const error = file ? requestImageError(file) : '';
     onChange({ image: error ? null : file ?? null, imageError: error });
   }
   function removeImage() {
@@ -130,7 +114,7 @@ function RequestDraftCard({ draft, number, group, disabled, onChange, onRemove }
     </label>
     {kind === 'MEMBER' && <>
       <label>{t('Image (optional)')}
-        <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={e => selectImage(e.target.files?.[0])} disabled={disabled} aria-describedby={helpId}/>
+        <input ref={fileInput} type="file" accept={REQUEST_IMAGE_ACCEPT} onChange={e => selectImage(e.target.files?.[0])} disabled={disabled} aria-describedby={helpId}/>
         <small id={helpId}>{t('JPEG, PNG, WebP, or GIF, up to 5 MiB.')}</small>
       </label>
       {imageError && <div className="alert error" role="alert">{t(imageError)}</div>}
@@ -153,7 +137,7 @@ export default function MemberRequestForm({ event, group, onBack, onSubmit, busy
   const activeGroup = event.groupId === group?.id ? group : undefined;
   const disabled = busy || pending;
   const imageBytes = drafts.reduce((total, draft) => total + (draft.kind === 'MEMBER' ? draft.image?.size ?? 0 : 0), 0);
-  const smallEnough = imageBytes <= MAX_IMAGE_BYTES;
+  const smallEnough = imageBytes <= MAX_REQUEST_IMAGE_BYTES;
   const ready = smallEnough && drafts.every(draft => isComplete(draft, activeGroup));
 
   function editDraft(id: number, changes: DraftChanges) {
@@ -186,7 +170,7 @@ export default function MemberRequestForm({ event, group, onBack, onSubmit, busy
         const request: MemberRequestPayload = { memberId: draft.memberId, offeringId: draft.offeringId, amount: Number(draft.amount), message };
         if (draft.image) {
           try {
-            request.image = { mimeType: draft.image.type, data: await readImage(draft.image) };
+            request.image = await readRequestImage(draft.image);
           } catch {
             editDraft(draft.id, {imageError: 'Could not read the image. Please try again.'});
             return;

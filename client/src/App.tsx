@@ -4,9 +4,10 @@ import i18n, { changeLanguage, supportedLanguage, type Language } from './i18n/c
 import { appearances, useAppearance } from './Appearance';
 import GroupManagement, { type Group } from './GroupManagement';
 import MemberRequestForm, { type MemberRequestPayload } from './MemberRequestForm';
+import RequestEditForm, { type RequestUpdate } from './RequestEditForm';
 import { nextJstDay, startOfJstDay } from './event-day';
 import { version } from '../package.json';
-import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Plus, Settings as SettingsIcon, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, ClipboardList, Clock3, History, Image as ImageIcon, Layers3, LogOut, Pencil, Plus, Settings as SettingsIcon, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react';
 
 const daikoLogo = new URL('./assets/daiko-logo.jpg', import.meta.url).href;
 const picklesLogo = new URL('./assets/pickles.png', import.meta.url).href;
@@ -18,14 +19,18 @@ function BrandLogo({className}: {className: string}) {
 
 type User = { id: string; name: string; email: string; role: string };
 type Event = { id: string; name: string; groupName: string; groupId: string | null; startsAt: string; imageUrl: string | null; requestCount: number; totalRequestCount: number };
-type RequestItem = { id: string; type: string; finishedAt?: string | null; memberName?: string | null; offeringName?: string | null; imageUrl?: string | null; amount: number | null; message: string; createdAt: string; user?: {name: string; email: string}; event?: Pick<Event, 'id' | 'name' | 'groupName' | 'startsAt'> };
+type RequestItem = { id: string; type: string; finishedAt?: string | null; memberName?: string | null; offeringName?: string | null; imageUrl?: string | null; amount: number | null; message: string; createdAt: string; user?: {name: string; email: string}; event?: Pick<Event, 'id' | 'name' | 'groupName' | 'groupId' | 'startsAt'> };
 type View = 'events' | 'requests' | 'admin' | 'past' | 'groups' | 'settings';
+
+class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { credentials: 'include', ...options, headers: { ...(options.body ? {'Content-Type': 'application/json'} : {}), ...options.headers } });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.message || data.error || `Something went wrong (${response.status}).`);
+    throw new ApiError(data.message || data.error || `Something went wrong (${response.status}).`, response.status);
   }
   return response.status === 204 ? undefined as T : response.json();
 }
@@ -36,6 +41,10 @@ const time = (value: string) => `${new Date(value).toLocaleString(i18n.resolvedL
 const submitted = (value: string) => new Date(value).toLocaleString(i18n.resolvedLanguage, {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'});
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Something went wrong. Please try again.';
 
+function canEditRequest(request: RequestItem, today: number) {
+  return !request.finishedAt && !!request.event && new Date(request.event.startsAt).getTime() >= today;
+}
+
 function App() {
   const { t } = useTranslation();
   const [user, setUser] = useState<User | null>(null);
@@ -43,6 +52,7 @@ function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [myRequests, setMyRequests] = useState<RequestItem[]>([]);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [view, setView] = useState<View>('events');
   const [selected, setSelected] = useState<Event | null>(null);
   const [queueEvent, setQueueEvent] = useState<Event | null>(null);
@@ -66,6 +76,7 @@ function App() {
   const admin = user?.role?.toUpperCase() === 'ADMIN';
   const upcomingEvents = events.filter(event => new Date(event.startsAt).getTime() >= today);
   const pastEvents = events.filter(event => new Date(event.startsAt).getTime() < today).reverse();
+  const activeEditId = myRequests.some(request => request.id === editingRequestId && canEditRequest(request, today)) ? editingRequestId : null;
   const eventListView = (view === 'events' && !selected) || (admin && ((view === 'admin' && !showCreate && !queueEvent) || (view === 'past' && !queueEvent)));
 
   const loadEvents = async () => { const result = await api<{events: Event[]}>('/daiko-api/events'); setEvents([...result.events].sort((a,b) => +new Date(a.startsAt) - +new Date(b.startsAt))); };
@@ -96,8 +107,8 @@ function App() {
   }, []);
   const signIn = async (email: string, password: string) => { setBusy(true); setError(''); try { await post('/api/auth/sign-in/email', {email, password}); await initialize(); setAccountReady(false); } catch(e) { setError(errorText(e)); } finally {setBusy(false);} };
   const closeQueue = () => { queueSequence.current += 1; activeSequence.current += 1; completedSequence.current += 1; openQueueEventId.current = null; setQueueEvent(null); setQueue([]); setQueueLoading(false); setQueueError(''); setCompletedQueue([]); setCompletedLoading(false); setCompletedError(''); };
-  const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); closeQueue(); setEvents([]); setGroups([]); setMyRequests([]); setShowCreate(false); setNotice(''); setAccountReady(false); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
-  const navigate = (next: View) => {setView(next); setSelected(null); closeQueue(); setShowCreate(false); setError(''); setNotice('');};
+  const signOut = async () => { setBusy(true); try { await post('/api/auth/sign-out'); setUser(null); setView('events'); setSelected(null); closeQueue(); setEvents([]); setGroups([]); setMyRequests([]); setEditingRequestId(null); setShowCreate(false); setNotice(''); setAccountReady(false); } catch(e) {setError(errorText(e));} finally {setBusy(false);} };
+  const navigate = (next: View) => {setView(next); setSelected(null); closeQueue(); setEditingRequestId(null); setShowCreate(false); setError(''); setNotice('');};
   const loadCompleted = async (eventId: string, queueVersion: number) => {
     const version = ++completedSequence.current;
     setCompletedLoading(true);
@@ -151,6 +162,24 @@ function App() {
       setBusy(false);
     }
   };
+  const saveRequest = async (id: string, update: RequestUpdate) => {
+    setBusy(true);
+    setError('');
+    try {
+      const saved = await api<RequestItem>(`/daiko-api/requests/${encodeURIComponent(id)}`, {
+        method: 'PATCH', body: JSON.stringify(update),
+      });
+      setMyRequests(current => current.map(item => item.id === id ? saved : item));
+      setNotice('Request updated.');
+    } catch (cause) {
+      if (!(cause instanceof ApiError) || (cause.status !== 404 && cause.status !== 409)) throw cause;
+      setError(cause.message);
+      await loadMyRequests().catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+    setEditingRequestId(current => current === id ? null : current);
+  };
   const finishRequest = async (id: string) => {
     if (finishingId) return;
     const eventId = queueEvent?.id;
@@ -193,14 +222,31 @@ function App() {
       <div className="sidebar-bottom"><div className="profile"><span className="avatar">{(user.name || user.email).slice(0,1).toUpperCase()}</span><span className="profile-text"><strong>{user.name}</strong><small>{user.email}</small></span></div><button className="signout" onClick={signOut} disabled={busy}><LogOut size={16}/> {t("Sign out")}</button></div>
     </aside>
     <div className={eventListView ? "main-wrap event-list-layout" : "main-wrap"}>
-      <header className="mobile-header"><div className="brand"><BrandLogo className="brand-mark"/>Daiko</div><button className="icon-button" aria-label={t("Sign out")} title={t("Sign out")} onClick={signOut}><LogOut size={18}/></button></header>
+      <header className="mobile-header"><div className="brand"><BrandLogo className="brand-mark"/>Daiko</div><button className="icon-button" aria-label={t("Sign out")} title={t("Sign out")} onClick={signOut} disabled={busy}><LogOut size={18}/></button></header>
       <div className="mobile-nav">{admin ? <><button className={view === 'admin' ? 'active' : ''} onClick={() => navigate('admin')}>{t("Manage")}</button><button className={view === 'past' ? 'active' : ''} onClick={() => navigate('past')}>{t("Past events")}</button></> : <><button className={view === 'events' ? 'active' : ''} onClick={() => navigate('events')}>{t("Events")}</button><button className={view === 'requests' ? 'active' : ''} onClick={() => navigate('requests')}>{t("My requests")}</button></>}<button className={view === 'settings' || view === 'groups' ? 'active' : ''} onClick={() => navigate('settings')}>{t('Settings')}</button></div>
       <main className="content">
         {error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}<button aria-label={t("Dismiss")} onClick={() => setError('')}><X size={16}/></button></div>}
         {notice && <div className="alert success" role="status"><Check size={17}/>{t(notice, {defaultValue: notice})}<button aria-label={t("Dismiss")} onClick={() => setNotice('')}><X size={16}/></button></div>}
         {view === 'events' && !selected && <><div className="page-heading"><div><h1>{t("Find your next event")}</h1></div></div><div className="section-heading"><div><h2>{t("Events")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No events yet")} text={t("Events will appear here once they’ve been added.")}/>}</div></>}
         {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={requests => submitRequests(selected, requests)}/>}
-        {view === 'requests' && <><div className="page-heading"><div><h1>{t("My requests")}</h1></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> {t("New request")}</button></div><div className="section-heading"><div><h2>{t("Request history")}</h2></div><span className="count">{t('totalCount', {count: myRequests.length})}</span></div><div className="request-list">{myRequests.length ? myRequests.map(request => <RequestCard key={request.id} request={request}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("Nothing here yet")} text={t("Once you submit a request, you’ll see it here.")}/>}</div></>}
+        {view === 'requests' && <>
+          <div className="page-heading"><div><h1>{t('My requests')}</h1></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> {t('New request')}</button></div>
+          <div className="section-heading"><div><h2>{t('Request history')}</h2></div><span className="count">{t('totalCount', {count: myRequests.length})}</span></div>
+          <div className="request-list">
+            {myRequests.length ? myRequests.map(request => <RequestCard
+              key={request.id}
+              request={request}
+              onEdit={canEditRequest(request, today) ? () => {setEditingRequestId(request.id); setError(''); setNotice('');} : undefined}
+              editDisabled={busy || activeEditId !== null}
+              editor={activeEditId === request.id ? <RequestEditForm
+                request={request}
+                group={groups.find(group => group.id === request.event?.groupId)}
+                onSave={update => saveRequest(request.id, update)}
+                onCancel={() => setEditingRequestId(null)}
+              /> : undefined}
+            />) : <Empty icon={<ClipboardList size={22}/>} title={t('Nothing here yet')} text={t('Once you submit a request, you’ll see it here.')}/>}
+          </div>
+        </>}
         {admin && view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading admin-event-heading"><div><h1>{t("Event management")}</h1></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> {t("Add event")}</button></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No upcoming events")} text={t("Add an event to start receiving requests.")}/>}</div></>}
         {admin && view === 'past' && !queueEvent && <><div className="page-heading"><div><h1>{t("Past events")}</h1></div></div><div className="section-heading"><div><h2>{t("Event history")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{pastEvents.length ? pastEvents.map(event => <EventCard key={event.id} event={event} admin countTotal onClick={() => selectQueue(event)}/>) : <Empty icon={<History size={22}/>} title={t("No past events")} text={t("Past events will appear here.")}/>}</div></>}
         {view === 'admin' && showCreate && <CreateEvent groups={groups} busy={busy} onBack={() => setShowCreate(false)} onSubmit={async values => {setBusy(true); setError(''); try {await post('/daiko-api/events', values); await loadEvents(); setShowCreate(false); setNotice('Event added successfully.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
@@ -415,9 +461,40 @@ function eventImportUrl(value: string): string {
    return ticketDive || livePocket ? `${url.origin}${url.pathname.replace(/\/$/, '')}` : '';
  } catch { return ''; }
 }
-function RequestCard({request, position, onFinish, finishing, finishDisabled}: {request: RequestItem; position?: number; onFinish?: () => void; finishing?: boolean; finishDisabled?: boolean}) {
+type RequestCardProps = {
+  request: RequestItem;
+  position?: number;
+  onFinish?: () => void;
+  finishing?: boolean;
+  finishDisabled?: boolean;
+  onEdit?: () => void;
+  editDisabled?: boolean;
+  editor?: React.ReactNode;
+};
+
+function RequestCard({request, position, onFinish, finishing, finishDisabled, onEdit, editDisabled, editor}: RequestCardProps) {
   const { t } = useTranslation();
- return <article className="request-card"><div className="request-top"><div className="request-meta">{position && <span className="position">{String(position).padStart(2, '0')}</span>}<span className="badge">{request.offeringName || (request.type === 'CHEKI' ? t('Cheki') : t('Goods'))}</span>{request.amount != null && <span className="amount">× {request.amount}</span>}{request.finishedAt && <span className="badge finished-badge">{t('Finished')}</span>}</div><time dateTime={request.createdAt}><Clock3 size={14}/>{submitted(request.createdAt)}</time></div>{request.event && <><h3>{request.event.name}</h3><p className="request-subtitle">{request.event.groupName} · {eventDate(request.event.startsAt)}</p></>}{request.user && <div className="request-user"><UserRound size={15}/><strong>{request.user.name}</strong><span>{request.user.email}</span></div>}{request.memberName && <div className="request-member">{t("Member")}: <strong>{request.memberName}</strong></div>}<p className="request-message">{request.message}</p>{request.imageUrl && <a className="request-attachment" href={request.imageUrl} target="_blank" rel="noopener noreferrer"><img src={request.imageUrl} alt={t("Attached image")}/></a>}{request.finishedAt && <p className="request-finished-at">{t('Finished on {{date}}', {date: submitted(request.finishedAt)})}</p>}{onFinish && <div className="request-actions"><button type="button" className="button secondary" onClick={onFinish} disabled={finishDisabled}><Check size={15}/> {finishing ? t('Finishing…') : t('Finish')}</button></div>}</article>;
+  return <article className="request-card">
+    <div className="request-top">
+      <div className="request-meta">
+        {position && <span className="position">{String(position).padStart(2, '0')}</span>}
+        <span className="badge">{request.offeringName || (request.type === 'CHEKI' ? t('Cheki') : t('Goods'))}</span>
+        {request.amount != null && <span className="amount">× {request.amount}</span>}
+        {request.finishedAt && <span className="badge finished-badge">{t('Finished')}</span>}
+      </div>
+      <time dateTime={request.createdAt}><Clock3 size={14}/>{submitted(request.createdAt)}</time>
+    </div>
+    {request.event && <><h3>{request.event.name}</h3><p className="request-subtitle">{request.event.groupName} · {eventDate(request.event.startsAt)}</p></>}
+    {request.user && <div className="request-user"><UserRound size={15}/><strong>{request.user.name}</strong><span>{request.user.email}</span></div>}
+    {request.memberName && <div className="request-member">{t('Member')}: <strong>{request.memberName}</strong></div>}
+    {editor ?? <>
+      <p className="request-message">{request.message}</p>
+      {request.imageUrl && <a className="request-attachment" href={request.imageUrl} target="_blank" rel="noopener noreferrer"><img src={request.imageUrl} alt={t('Attached image')}/></a>}
+      {onEdit && <div className="request-actions"><button type="button" className="button secondary" onClick={onEdit} disabled={editDisabled}><Pencil size={15} aria-hidden="true"/> {t('Edit request')}</button></div>}
+    </>}
+    {request.finishedAt && <p className="request-finished-at">{t('Finished on {{date}}', {date: submitted(request.finishedAt)})}</p>}
+    {onFinish && <div className="request-actions"><button type="button" className="button secondary" onClick={onFinish} disabled={finishDisabled}><Check size={15}/> {finishing ? t('Finishing…') : t('Finish')}</button></div>}
+  </article>;
 }
 function Empty({icon, title, text}: {icon: React.ReactNode; title: string; text: string}) {return <div className="empty"><div className="empty-icon">{icon}</div><h3>{title}</h3><p>{text}</p></div>;}
 export default App;

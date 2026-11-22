@@ -48,6 +48,10 @@ html::-webkit-scrollbar,.mobile-nav::-webkit-scrollbar{display:none}
 .event-list-layout .event-list>*{flex-shrink:0}
 .event-list:focus-visible{outline:3px solid #a8b9d3;outline-offset:2px;border-radius:8px}
 .request-actions{display:flex;justify-content:flex-end;margin-top:16px}
+.request-editor{margin-top:20px}
+.request-editor label{display:block;font-size:12px;font-weight:700;margin-bottom:16px}
+.request-editor label small{display:block;font-weight:400;margin-top:7px}
+.request-editor .alert{margin-top:12px;margin-bottom:0}
 .finished-badge{color:#337453;background:#effaf4}
 .dark .finished-badge{color:#b6f3d1;background:#143b35}
 

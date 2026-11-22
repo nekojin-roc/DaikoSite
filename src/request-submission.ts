@@ -5,18 +5,27 @@ import { decodeRequestImage, removeRequestImage, saveRequestImage } from "./requ
 
 const message = z.string().trim().min(1).max(5000);
 const amount = z.number().int().min(1).max(1000);
+const selectionId = z.string().min(1);
+const imageInput = z.object({ mimeType: z.string(), data: z.string() }).strict();
 export const requestInput = z.union([
   z.object({ type: z.literal("CHEKI"), amount, message }).strict(),
   z.object({ type: z.literal("GOODS"), amount: z.null().optional(), message }).strict(),
   z.object({
-    memberId: z.string().min(1),
-    offeringId: z.string().min(1),
+    memberId: selectionId,
+    offeringId: selectionId,
     amount: amount.nullable().optional(),
     message,
-    image: z.object({ mimeType: z.string(), data: z.string() }).strict().optional(),
+    image: imageInput.optional(),
   }).strict(),
 ]);
 export const batchInput = z.object({ requests: z.array(requestInput).min(1).max(10) }).strict();
+export const requestEditInput = z.object({
+  message,
+  amount: amount.nullable().optional(),
+  memberId: selectionId.optional(),
+  offeringId: selectionId.optional(),
+  image: imageInput.nullable().optional(),
+}).strict();
 
 export class RequestSubmissionError extends Error {
   constructor(readonly statusCode: number, message: string) { super(message); }

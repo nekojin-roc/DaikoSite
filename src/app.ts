@@ -4,9 +4,10 @@ import { z } from "zod";
 import type { Identity, IdentityResolver } from "./identity.js";
 import path from "node:path";
 import { EventImportError, fetchEventImport } from "./event-import.js";
-import { InvalidRequestImage, openRequestImage, removeRequestImage } from "./request-images.js";
-import { batchInput, createRequests, requestInput, RequestSubmissionError } from "./request-submission.js";
+import { decodeRequestImage, InvalidRequestImage, openRequestImage, removeRequestImage, saveRequestImage } from "./request-images.js";
+import { batchInput, createRequests, requestEditInput, requestInput, RequestSubmissionError } from "./request-submission.js";
 import { hasEventImage, localImageFilename, openEventImage, saveEventImage } from "./event-images.js";
+import { startOfJstDay } from "./event-day.js";
 
 type User = Identity & { role: "ADMIN" | "USER" };
 declare module "fastify" { interface FastifyRequest { daikoUser: User | null } }
@@ -212,6 +213,81 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     const { requests } = batchInput.parse(request.body);
     const items = await createRequests(options.prisma, requestImageDirectory, request.params.id, request.daikoUser!, requests);
     return reply.code(201).send({ requests: items.map(requestView) });
+  });
+  app.patch<{ Params: { id: string } }>("/api/requests/:id", submitOptions, async (request, reply) => {
+    const input = requestEditInput.parse(request.body);
+    const owner = { id: request.params.id, userId: request.daikoUser!.id };
+    const current = await options.prisma.request.findFirst({
+      where: owner,
+      select: { type: true, finishedAt: true, imageFile: true, event: { select: { startsAt: true, groupId: true } } },
+    });
+    if (!current) return reply.code(404).send({ error: "Request not found" });
+    if (current.finishedAt) return reply.code(409).send({ error: "Finished requests cannot be edited." });
+    if (current.event.startsAt < startOfJstDay()) return reply.code(409).send({ error: "Past event requests cannot be edited." });
+    if (current.type !== "CUSTOM" && (input.memberId !== undefined || input.offeringId !== undefined || input.image !== undefined)) {
+      return reply.code(400).send({ error: "Invalid input" });
+    }
+    if (current.type === "GOODS" && input.amount !== undefined) {
+      return reply.code(400).send({ error: "Goods requests do not have a quantity." });
+    }
+    if (current.type === "CHEKI" && input.amount == null) {
+      return reply.code(400).send({ error: "Cheki requests require a quantity." });
+    }
+
+    const { groupId } = current.event;
+    const member = input.memberId && groupId
+      ? await options.prisma.member.findFirst({ where: { id: input.memberId, groupId }, select: { id: true, name: true } })
+      : null;
+    const offering = input.offeringId && groupId
+      ? await options.prisma.offering.findFirst({ where: { id: input.offeringId, groupId, archived: false }, select: { id: true, name: true } })
+      : null;
+    if ((input.memberId && !member) || (input.offeringId && !offering)) {
+      return reply.code(400).send({ error: "Select a valid member and offering for this event" });
+    }
+
+    const imageChanged = input.image !== undefined;
+    const imageFile = input.image ? await saveRequestImage(requestImageDirectory, decodeRequestImage(input.image)) : input.image;
+    const removeImage = async (filename: string) => {
+      try { await removeRequestImage(requestImageDirectory, filename); }
+      catch (error) { request.log.error({ err: error, filename }, "Failed to remove request image after edit"); }
+    };
+    let result;
+    try {
+      result = await options.prisma.$transaction(async tx => {
+        // Check against the current day and queue state at write time. Match
+        // the previous attachment so concurrent edits never orphan a replacement.
+        const update = await tx.request.updateMany({
+          where: {
+            ...owner, type: current.type, finishedAt: null,
+            ...(imageChanged ? { imageFile: current.imageFile } : {}),
+            event: {
+              startsAt: { gte: startOfJstDay() },
+              ...(member || offering ? {
+                group: {
+                  id: groupId!,
+                  ...(member ? { members: { some: member } } : {}),
+                  ...(offering ? { offerings: { some: { ...offering, archived: false } } } : {}),
+                },
+              } : {}),
+            },
+          },
+          data: { message: input.message, amount: input.amount, memberName: member?.name, offeringName: offering?.name, imageFile },
+        });
+        if (!update.count) throw new RequestSubmissionError(409, "This request can no longer be edited.");
+        const item = await tx.request.findUniqueOrThrow({ where: { id: owner.id }, include: { event: { select: eventSelect } } });
+        // Historical records could share a filename. Only remove an old
+        // attachment once no request points at it after this update.
+        const oldImage = imageChanged && current.imageFile && !await tx.request.findFirst({
+          where: { imageFile: current.imageFile }, select: { id: true },
+        }) ? current.imageFile : null;
+        return { item, oldImage };
+      });
+    } catch (error) {
+      if (imageFile) await removeImage(imageFile);
+      throw error;
+    }
+    if (result.oldImage) await removeImage(result.oldImage);
+    return { ...requestView(result.item), event: eventView(result.item.event) };
   });
   app.get<{ Params: { id: string } }>("/api/requests/:id/image", { preHandler: auth }, async (request, reply) => {
     const item = await options.prisma.request.findUnique({ where: { id: request.params.id }, select: { imageFile: true, userId: true } });
