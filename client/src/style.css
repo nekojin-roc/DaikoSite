@@ -36,16 +36,37 @@
 /* Keep the page scrollable without showing scrollbar chrome. */
 html,.mobile-nav{scrollbar-width:none;-ms-overflow-style:none}
 html::-webkit-scrollbar,.mobile-nav::-webkit-scrollbar{display:none}
-/* On event screens, the app frame stays in place while the list scrolls. */
-.event-list-screen{height:100vh;height:100dvh;min-height:0;overflow:hidden}
-.event-list-screen .sidebar{min-height:0}
-.event-list-layout{height:100%;min-height:0;display:flex;flex-direction:column}
-.event-list-layout .mobile-header,.event-list-layout .mobile-nav{flex-shrink:0}
-.event-list-layout .content{width:100%;min-height:0;flex:1;display:flex;flex-direction:column;padding-bottom:0}
-.event-list-layout .page-heading,.event-list-layout .section-heading,.event-list-layout .alert{flex-shrink:0}
-.event-list-layout .event-list{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:3px 3px env(safe-area-inset-bottom,0px);scrollbar-width:none;-ms-overflow-style:none}
-.event-list-layout .event-list::-webkit-scrollbar{display:none}
-.event-list-layout .event-list>*{flex-shrink:0}
+@media screen and (width > 800px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .sidebar {
+    min-height: 0;
+  }
+  .sidebar .navigation {
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .main-wrap {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+}
+
+/* Mobile event lists scroll below the header and navigation. */
+@media (max-width:800px) {
+  .event-list-screen{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+  .event-list-layout{height:100%;min-height:0;display:flex;flex-direction:column}
+  .event-list-layout .mobile-header,.event-list-layout .mobile-nav{flex-shrink:0}
+  .event-list-layout .content{width:100%;min-height:0;flex:1;display:flex;flex-direction:column;padding-bottom:0}
+  .event-list-layout .page-heading,.event-list-layout .section-heading,.event-list-layout .alert{flex-shrink:0}
+  .event-list-layout .event-list{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:3px 3px env(safe-area-inset-bottom,0px);scrollbar-width:none;-ms-overflow-style:none}
+  .event-list-layout .event-list::-webkit-scrollbar{display:none}
+  .event-list-layout .event-list>*{flex-shrink:0}
+}
 .event-list:focus-visible{outline:3px solid #a8b9d3;outline-offset:2px;border-radius:8px}
 .request-actions{display:flex;justify-content:flex-end;margin-top:16px}
 .request-editor{margin-top:20px}
@@ -96,8 +117,6 @@ html::-webkit-scrollbar,.mobile-nav::-webkit-scrollbar{display:none}
 @media(max-width:520px){.appearance-toggle button{min-width:0}}
 
 @media(max-height:520px){
-  .event-list-screen .sidebar{overflow-y:auto;scrollbar-width:none;-ms-overflow-style:none}
-  .event-list-screen .sidebar::-webkit-scrollbar{display:none}
   .event-list-layout .content{padding-top:16px}
   .event-list-layout .page-heading{margin-bottom:16px}
   .event-list-layout .section-heading{margin-bottom:10px}
