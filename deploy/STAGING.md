@@ -6,7 +6,7 @@ ParcelHub is the identity provider. Daiko uses the same account credentials, wit
 
 LivePocket imports first use the regular HTTP importer. If LivePocket presents its browser challenge, the API may use the isolated `livepocket-browser` service. It has no application data volumes, credentials, host port, or direct internet network; its requests go through `browser-proxy`, which permits only the provider and its challenge hosts. Each import uses a fresh browser session. The service handles silent challenges, not an interactive CAPTCHA; the user can enter details manually if the provider still blocks access. The Chromium seccomp profile is based on Playwright 1.65.1's profile with an added `chroot` allowance for the browser sandbox; its upstream license is in `deploy/playwright-license.txt`.
 
-For an update, prepare a release directory with the intended source and a private `.env` containing `DAIKO_ADMIN_EMAILS`. `compose.staging.yml` is the production Compose file despite its historical name, and mounts `deploy/staging-app-nginx.conf` for the application. Validate configuration and build images before stopping any service:
+For an update, prepare a release directory from the intended Git commit and a mode-0600 `.env` containing `DAIKO_ADMIN_EMAILS`. An allowlisted account must also have a verified ParcelHub email to use admin routes. `compose.staging.yml` is the production Compose file despite its historical name, and mounts `deploy/staging-app-nginx.conf` for the application. Validate configuration and build images before stopping any service:
 
 ```sh
 docker compose -f compose.staging.yml config --quiet
@@ -19,9 +19,16 @@ Back up the entire production volume with the API stopped before applying migrat
 mkdir -p /root/Daiko-production-backups
 chmod 700 /root/Daiko-production-backups
 docker compose -f compose.staging.yml stop staging-api
-docker run --rm -v daiko-staging_staging-data:/source:ro -v /root/Daiko-production-backups:/backup alpine:3.20 sh -c 'tar -czf /backup/daiko-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /source .'
+docker run --rm -v daiko-staging_staging-data:/source:ro -v /root/Daiko-production-backups:/backup alpine:3.24 sh -ec 'umask 077; archive=/backup/daiko-$(date -u +%Y%m%dT%H%M%SZ).tar.gz; tar -czf "$archive" -C /source .; tar -tzf "$archive" >/dev/null'
+```
+
+The API now runs as UID/GID 1000. On the first upgrade from the former root API, **after the backup succeeds, while the old API is still stopped**, transfer ownership of the dedicated data volume. A new volume already has the correct owner. This step preserves the database and uploads; the old root API can still read them if the release is rolled back.
+
+```sh
+docker run --rm -v daiko-staging_staging-data:/data alpine:3.24 sh -ec 'chown -R 1000:1000 /data; chmod 700 /data; if [ -f /data/daiko.db ]; then chmod 600 /data/daiko.db; fi'
 docker compose -f compose.staging.yml up -d --no-build
-docker compose -f compose.staging.yml exec staging-web nginx -t
+docker compose -f compose.staging.yml exec -T staging-web nginx -t
+curl -f http://127.0.0.1:3334/daiko-api/health
 curl -f http://127.0.0.1:3334/daiko-api/session
 ```
 

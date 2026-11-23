@@ -43,7 +43,10 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     if (request.url === "/api/health") return;
     try {
       const identity = await options.resolveIdentity(request.headers.cookie);
-      if (identity) request.daikoUser = { ...identity, role: admins.has(identity.email.toLowerCase()) ? "ADMIN" : "USER" };
+      if (identity) {
+        const { id, name, email, emailVerified } = identity;
+        request.daikoUser = { id, name, email, role: emailVerified === true && admins.has(email.toLowerCase()) ? "ADMIN" : "USER" };
+      }
     } catch (error) {
       request.log.error(error, "ParcelHub authentication failed");
       return reply.code(503).send({ error: "Authentication service unavailable" });
@@ -70,23 +73,23 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
   };
   app.get("/api/health", async () => ({ status: "ok" }));
   app.get("/api/session", async request => ({ user: request.daikoUser }));
-  app.get("/api/build", { preHandler: auth }, async (_request, reply) => {
+  app.get("/api/build", { onRequest: auth }, async (_request, reply) => {
     const counter = await options.prisma.buildCounter.findUnique({ where: { id: 1 }, select: { value: true } });
     if (!counter) return reply.code(503).send({ error: "Build number unavailable" });
     return { build: counter.value };
   });
-  app.get("/api/groups", { preHandler: auth }, async () => ({
+  app.get("/api/groups", { onRequest: auth }, async () => ({
     groups: await options.prisma.group.findMany({
       select: { id: true, name: true, members: { select: { id: true, name: true }, orderBy: { name: "asc" } }, offerings: { where: { archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } } },
       orderBy: { name: "asc" },
     }),
   }));
-  app.post("/api/groups", { preHandler: admin }, async (request, reply) => {
+  app.post("/api/groups", { onRequest: admin }, async (request, reply) => {
     const input = nameInput.parse(request.body);
     const group = await options.prisma.group.create({ data: input, select: { id: true, name: true } });
     return reply.code(201).send({ ...group, members: [], offerings: [] });
   });
-  app.patch<{ Params: { id: string } }>("/api/groups/:id", { preHandler: admin }, async (request, reply) => {
+  app.patch<{ Params: { id: string } }>("/api/groups/:id", { onRequest: admin }, async (request, reply) => {
     const input = nameInput.parse(request.body);
     const result = await options.prisma.$transaction(async tx => {
       const updated = await tx.group.updateMany({ where: { id: request.params.id }, data: input });
@@ -97,55 +100,55 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     if (!result) return reply.code(404).send({ error: "Group not found" });
     return result;
   });
-  app.post<{ Params: { id: string } }>("/api/groups/:id/members", { preHandler: admin }, async (request, reply) => {
+  app.post<{ Params: { id: string } }>("/api/groups/:id/members", { onRequest: admin }, async (request, reply) => {
     const input = nameInput.parse(request.body);
     if (!await options.prisma.group.findUnique({ where: { id: request.params.id } })) return reply.code(404).send({ error: "Group not found" });
     const member = await options.prisma.member.create({ data: { ...input, groupId: request.params.id }, select: { id: true, name: true } });
     return reply.code(201).send(member);
   });
-  app.patch<{ Params: { id: string; memberId: string } }>("/api/groups/:id/members/:memberId", { preHandler: admin }, async (request, reply) => {
+  app.patch<{ Params: { id: string; memberId: string } }>("/api/groups/:id/members/:memberId", { onRequest: admin }, async (request, reply) => {
     const input = nameInput.parse(request.body);
     const result = await options.prisma.member.updateMany({ where: { id: request.params.memberId, groupId: request.params.id }, data: input });
     if (!result.count) return reply.code(404).send({ error: "Member not found" });
     return { id: request.params.memberId, name: input.name };
   });
-  app.post<{ Params: { id: string } }>("/api/groups/:id/offerings", { preHandler: admin }, async (request, reply) => {
+  app.post<{ Params: { id: string } }>("/api/groups/:id/offerings", { onRequest: admin }, async (request, reply) => {
     const input = nameInput.parse(request.body);
     if (!await options.prisma.group.findUnique({ where: { id: request.params.id } })) return reply.code(404).send({ error: "Group not found" });
     const offering = await options.prisma.offering.create({ data: { ...input, groupId: request.params.id }, select: { id: true, name: true } });
     return reply.code(201).send(offering);
   });
-  app.patch<{ Params: { id: string; offeringId: string } }>("/api/groups/:id/offerings/:offeringId", { preHandler: admin }, async (request, reply) => {
+  app.patch<{ Params: { id: string; offeringId: string } }>("/api/groups/:id/offerings/:offeringId", { onRequest: admin }, async (request, reply) => {
     const input = nameInput.parse(request.body);
     const result = await options.prisma.offering.updateMany({ where: { id: request.params.offeringId, groupId: request.params.id, archived: false }, data: input });
     if (!result.count) return reply.code(404).send({ error: "Offering not found" });
     return { id: request.params.offeringId, name: input.name };
   });
-  app.delete<{ Params: { id: string; offeringId: string } }>("/api/groups/:id/offerings/:offeringId", { preHandler: admin }, async (request, reply) => {
+  app.delete<{ Params: { id: string; offeringId: string } }>("/api/groups/:id/offerings/:offeringId", { onRequest: admin }, async (request, reply) => {
     const result = await options.prisma.offering.updateMany({ where: { id: request.params.offeringId, groupId: request.params.id, archived: false }, data: { archived: true } });
     if (!result.count) return reply.code(404).send({ error: "Offering not found" });
     return reply.code(204).send();
   });
-  app.get("/api/events", { preHandler: auth }, async () => {
-    const [events, counts] = await Promise.all([
-      options.prisma.event.findMany({ select: eventSelect, orderBy: [{ startsAt: "asc" }, { id: "asc" }] }),
-      options.prisma.request.groupBy({ by: ["eventId"], _count: { _all: true } }),
-    ]);
+  app.get("/api/events", { onRequest: auth }, async request => {
+    const visibleEvents = request.daikoUser!.role === "ADMIN" ? {} : { startsAt: { gte: startOfJstDay() } };
+    const listing = options.prisma.event.findMany({ where: visibleEvents, select: eventSelect, orderBy: [{ startsAt: "asc" }, { id: "asc" }] });
+    const totalsByEvent = options.prisma.request.groupBy({ by: ["eventId"], where: { event: visibleEvents }, _count: { _all: true } });
+    const [events, counts] = await options.prisma.$transaction([listing, totalsByEvent]);
     const totals = new Map(counts.map(count => [count.eventId, count._count._all]));
     return { events: events.map(event => ({ ...eventView(event), totalRequestCount: totals.get(event.id) ?? 0 })) };
   });
-  app.post("/api/events/import", { preHandler: admin }, async request => {
+  app.post("/api/events/import", { onRequest: admin }, async request => {
     const { url } = z.object({ url: z.string().trim().min(1).max(2048) }).strict().parse(request.body);
     const imported = await importEvent(url);
     const imageUrl = await saveEventImage(imageDirectory, imported.image, imported.contentType);
     return { name: imported.name, imageUrl, startsAt: imported.startsAt };
   });
-  app.get<{ Params: { filename: string } }>("/api/event-images/:filename", { preHandler: auth }, async (request, reply) => {
+  app.get<{ Params: { filename: string } }>("/api/event-images/:filename", { onRequest: auth }, async (request, reply) => {
     const image = await openEventImage(imageDirectory, request.params.filename);
     if (!image) return reply.code(404).send({ error: "Image not found" });
     return reply.header("X-Content-Type-Options", "nosniff").type(image.contentType).send(image.stream);
   });
-  app.post("/api/events", { preHandler: admin }, async (request, reply) => {
+  app.post("/api/events", { onRequest: admin }, async (request, reply) => {
     const input = eventInput.parse(request.body);
     if (input.imageUrl && localImageFilename(input.imageUrl) && !await hasEventImage(imageDirectory, input.imageUrl)) {
       return reply.code(400).send({ error: "Imported image not found. Fetch the event again." });
@@ -155,13 +158,19 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     const event = await options.prisma.event.create({ data: { name: input.name, groupId: group?.id ?? null, groupName: group?.name ?? input.groupName!, startsAt: new Date(input.startsAt), imageUrl: input.imageUrl || null }, select: eventSelect });
     return reply.code(201).send({ ...eventView(event), totalRequestCount: 0 });
   });
-  app.delete<{ Params: { id: string } }>("/api/events/:id", { preHandler: admin }, async (request, reply) => {
+  app.delete<{ Params: { id: string } }>("/api/events/:id", { onRequest: admin }, async (request, reply) => {
+    const { expectedRequestCount } = z.object({
+      expectedRequestCount: z.string().regex(/^\d{1,10}$/).transform(Number).optional(),
+    }).parse(request.query);
     // Delete the event and its queue together. Imported event images are
     // content-addressed and may be shared, so they are left untouched.
     const result = await options.prisma.$transaction(async tx => {
       const event = await tx.event.findUnique({ where: { id: request.params.id }, select: { id: true } });
       if (!event) return null;
       const items = await tx.request.findMany({ where: { eventId: event.id }, select: { imageFile: true } });
+      if (expectedRequestCount !== undefined && items.length !== expectedRequestCount) {
+        throw new RequestSubmissionError(409, "The request count changed. Review the queue before deleting this event.");
+      }
       const images = [...new Set(items.flatMap(item => item.imageFile ? [item.imageFile] : []))];
       await tx.request.deleteMany({ where: { eventId: event.id } });
       await tx.event.delete({ where: { id: event.id } });
@@ -179,7 +188,7 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     }
     return reply.code(204).send();
   });
-  app.get<{ Params: { id: string } }>("/api/events/:id/requests", { preHandler: admin }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/api/events/:id/requests", { onRequest: admin }, async (request, reply) => {
     const event = await options.prisma.event.findUnique({ where: { id: request.params.id }, select: { id: true } });
     if (!event) return reply.code(404).send({ error: "Event not found" });
     const items = await options.prisma.request.findMany({ where: { eventId: event.id, finishedAt: null }, orderBy: [{ createdAt: "asc" }, { sequence: "asc" }] });
@@ -188,7 +197,7 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     items.sort((a, b) => Number(b.type === "GOODS") - Number(a.type === "GOODS"));
     return { requests: items.map(requestView) };
   });
-  app.get<{ Params: { id: string } }>("/api/events/:id/requests/completed", { preHandler: admin }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/api/events/:id/requests/completed", { onRequest: admin }, async (request, reply) => {
     const event = await options.prisma.event.findUnique({ where: { id: request.params.id }, select: { id: true } });
     if (!event) return reply.code(404).send({ error: "Event not found" });
     const items = await options.prisma.request.findMany({
@@ -197,13 +206,13 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     });
     return { requests: items.map(requestView) };
   });
-  app.post<{ Params: { id: string } }>("/api/requests/:id/finish", { preHandler: admin }, async (request, reply) => {
+  app.post<{ Params: { id: string } }>("/api/requests/:id/finish", { onRequest: admin }, async (request, reply) => {
     // Marking rather than deleting preserves the request in the user's history.
     const updated = await options.prisma.request.updateMany({ where: { id: request.params.id, finishedAt: null }, data: { finishedAt: new Date() } });
     if (!updated.count && !await options.prisma.request.findUnique({ where: { id: request.params.id }, select: { id: true } })) return reply.code(404).send({ error: "Request not found" });
     return reply.code(204).send();
   });
-  const submitOptions = { preHandler: auth, bodyLimit: 8 * 1024 * 1024 };
+  const submitOptions = { onRequest: auth, bodyLimit: 8 * 1024 * 1024 };
   app.post<{ Params: { id: string } }>("/api/events/:id/requests", submitOptions, async (request, reply) => {
     const inputs = [requestInput.parse(request.body)];
     const [item] = await createRequests(options.prisma, requestImageDirectory, request.params.id, request.daikoUser!, inputs);
@@ -289,14 +298,14 @@ export async function createApp(options: { prisma: PrismaClient; resolveIdentity
     if (result.oldImage) await removeImage(result.oldImage);
     return { ...requestView(result.item), event: eventView(result.item.event) };
   });
-  app.get<{ Params: { id: string } }>("/api/requests/:id/image", { preHandler: auth }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/api/requests/:id/image", { onRequest: auth }, async (request, reply) => {
     const item = await options.prisma.request.findUnique({ where: { id: request.params.id }, select: { imageFile: true, userId: true } });
     if (!item?.imageFile || (request.daikoUser!.role !== "ADMIN" && item.userId !== request.daikoUser!.id)) return reply.code(404).send({ error: "Image not found" });
     const image = await openRequestImage(requestImageDirectory, item.imageFile);
     if (!image) return reply.code(404).send({ error: "Image not found" });
     return reply.header("X-Content-Type-Options", "nosniff").type(image.contentType).send(image.stream);
   });
-  app.get("/api/my-requests", { preHandler: auth }, async request => {
+  app.get("/api/my-requests", { onRequest: auth }, async request => {
     const items = await options.prisma.request.findMany({ where: { userId: request.daikoUser!.id }, include: { event: { select: eventSelect } }, orderBy: [{ createdAt: "asc" }, { sequence: "asc" }] });
     return { requests: items.map(item => ({ ...requestView(item), event: eventView(item.event) })) };
   });

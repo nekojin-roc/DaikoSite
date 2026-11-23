@@ -24,10 +24,10 @@ export function decodeRequestImage(image: { mimeType: string; data: string }) {
   return { bytes, ext };
 }
 export async function saveRequestImage(directory: string, image: ReturnType<typeof decodeRequestImage>) {
-  await mkdir(directory, { recursive: true });
+  await mkdir(directory, { recursive: true, mode: 0o700 });
   const filename = `${randomUUID()}.${image.ext}`;
   const filepath = path.join(directory, filename);
-  const file = await open(filepath, "wx");
+  const file = await open(filepath, "wx", 0o600);
   try {
     await file.writeFile(image.bytes).finally(() => file.close());
   } catch (error) {

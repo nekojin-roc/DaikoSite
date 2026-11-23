@@ -1,7 +1,9 @@
 {
   "Request {{number}}": "Request {{number}}",
   "Remove request {{number}}": "Remove request {{number}}",
+  "Changes saved, but the list could not be refreshed.": "Changes saved, but the list could not be refreshed.",
   "Add another request": "Add another request",
+  "Delete last request": "Delete last request",
   "Images in one submission must total 5 MiB or less.": "Images in one submission must total 5 MiB or less.",
   "You can add up to {{count}} requests at a time.": "You can add up to {{count}} requests at a time.",
   "Your requests have been submitted. You can find them in My requests.": "Your requests have been submitted. You can find them in My requests.",
@@ -56,7 +58,7 @@
   "View queue": "View queue",
   "Make a request": "Make a request",
   "Back to events": "Back to events",
-  "Tell us what you need": "Tell us what you need",
+  "Make your requests": "Make your requests",
   "Request details": "Request details",
   "Cheki": "Cheki",
   "Goods": "Goods",
@@ -228,5 +230,7 @@
   "No completed requests yet": "No completed requests yet",
   "Finished requests for this event will appear here.": "Finished requests for this event will appear here.",
   "Finished on {{date}}": "Finished on {{date}}",
-  "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone."
+  "Delete {{name}} and all associated requests ({{total}} pending and completed in total)? This cannot be undone.": "Delete {{name}} and all associated requests ({{total}} pending and completed in total)? This cannot be undone.",
+  "The request count changed. Review the queue before deleting this event.": "The request count changed. Review the queue before deleting this event.",
+  "This event is no longer accepting requests.": "This event is no longer accepting requests."
 }

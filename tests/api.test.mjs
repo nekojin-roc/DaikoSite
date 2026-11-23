@@ -10,7 +10,8 @@ import { createApp } from '../dist/app.js';
 import { parcelHubIdentity } from '../dist/identity.js';
 
 const ORIGIN = 'http://localhost:5173';
-test('authorized workflows, validation, ordering and persistence', async () => {
+test('authorized workflows, validation, ordering and persistence', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2027-01-01T00:00:00Z'));
   const dir = await mkdtemp(path.join(tmpdir(), 'daiko-test-'));
   const url = `file:${path.join(dir, 'test.db').replaceAll('\\', '/')}`;
   await writeFile(path.join(dir, 'test.db'), '');
@@ -18,7 +19,9 @@ test('authorized workflows, validation, ordering and persistence', async () => {
   assert.equal(migrate.status, 0, migrate.stderr);
   const prisma = new PrismaClient({ datasources: { db: { url } } });
   const identities = {
-    'sid=admin': { id: 'a', name: 'Owner', email: 'owner@example.com' },
+    'sid=admin': { id: 'a', name: 'Owner', email: 'owner@example.com', emailVerified: true },
+    'sid=unverified': { id: 'a', name: 'Owner', email: 'owner@example.com', emailVerified: false },
+    'sid=missingVerification': { id: 'a', name: 'Owner', email: 'owner@example.com' },
     'sid=user': { id: 'u', name: 'Fan', email: 'fan@example.com' },
     'sid=other': { id: 'v', name: 'Other', email: 'other@example.com' },
   };
@@ -26,6 +29,12 @@ test('authorized workflows, validation, ordering and persistence', async () => {
   const call = (method, url, cookie, payload, origin = ORIGIN) => app.inject({ method, url, headers: { ...(cookie ? { cookie } : {}), ...(method === 'POST' ? { origin } : {}) }, ...(payload !== undefined ? { payload } : {}) });
   try {
     assert.deepEqual((await call('GET', '/api/session')).json(), { user: null });
+    for (const cookie of ['sid=unverified', 'sid=missingVerification']) {
+      assert.equal((await call('GET', '/api/session', cookie)).json().user.role, 'USER');
+      assert.equal((await call('GET', '/api/groups', cookie)).statusCode, 200);
+      assert.equal((await call('POST', '/api/groups', cookie, { name: 'Example' })).statusCode, 403);
+    }
+    assert.equal((await call('GET', '/api/session', 'sid=admin')).json().user.role, 'ADMIN');
     assert.equal((await call('GET', '/api/build')).statusCode, 401);
     assert.deepEqual((await call('GET', '/api/build', 'sid=user')).json(), { build: 8 });
     assert.deepEqual((await call('GET', '/api/build', 'sid=admin')).json(), { build: 8 });
@@ -63,12 +72,13 @@ test('authorized workflows, validation, ordering and persistence', async () => {
 
 test('ParcelHub identity requires both a valid session and live account access', async () => {
   let guardStatus = 200;
+  let emailVerified;
   let receivedCookie;
   const server = createServer((request, response) => {
     receivedCookie = request.headers.cookie;
     if (request.url === '/api/auth/get-session') {
       response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ user: { id: 'u', name: 'Fan', email: 'fan@example.com' } }));
+      response.end(JSON.stringify({ user: { id: 'u', name: 'Fan', email: 'fan@example.com', emailVerified } }));
     } else if (request.url === '/api/my/items') {
       response.statusCode = guardStatus;
       response.end('{}');
@@ -78,7 +88,9 @@ test('ParcelHub identity requires both a valid session and live account access',
   try {
     const resolver = parcelHubIdentity(`http://127.0.0.1:${server.address().port}`);
     assert.equal(await resolver(undefined), null);
-    assert.equal((await resolver('sid=test')).id, 'u');
+    assert.deepEqual(await resolver('sid=test'), { id: 'u', name: 'Fan', email: 'fan@example.com', emailVerified: false });
+    emailVerified = true;
+    assert.equal((await resolver('sid=test')).emailVerified, true);
     assert.equal(receivedCookie, 'sid=test');
     guardStatus = 403;
     assert.equal(await resolver('sid=test'), null);

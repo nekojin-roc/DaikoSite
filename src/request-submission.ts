@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import { startOfJstDay } from "./event-day.js";
 import type { Identity } from "./identity.js";
 import { decodeRequestImage, removeRequestImage, saveRequestImage } from "./request-images.js";
 
@@ -48,8 +49,12 @@ export async function createRequests(
       imageFiles.push(image ? await saveRequestImage(imageDirectory, image) : null);
     }
     return await prisma.$transaction(async tx => {
-      const event = await tx.event.findUnique({ where: { id: eventId }, select: { groupId: true } });
+      const event = await tx.event.findUnique({ where: { id: eventId }, select: { groupId: true, startsAt: true } });
       if (!event) throw new RequestSubmissionError(404, "Event not found");
+
+      if (event.startsAt < startOfJstDay()) {
+        throw new RequestSubmissionError(409, "This event is no longer accepting requests.");
+      }
 
       const requests = [];
       for (const [index, input] of inputs.entries()) {

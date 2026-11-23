@@ -15,6 +15,7 @@ const EVENT_START = '2027-04-10T19:00';
 const ORIGINAL_IMAGE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0y8AAAAASUVORK5CYII=', 'base64');
 
 test('event import authorization, original-image storage, and persistence', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2027-01-01T00:00:00Z'));
   const directory = await mkdtemp(path.join(tmpdir(), 'daiko-event-import-'));
   const databasePath = path.join(directory, 'test.db');
   const databaseUrl = `file:${databasePath.replaceAll('\\', '/')}`;
@@ -32,7 +33,7 @@ test('event import authorization, original-image storage, and persistence', asyn
   });
   assert.equal(migration.status, 0, migration.stderr);
   const identities = {
-    'sid=admin': { id: 'admin', name: 'Owner', email: 'owner@example.com' },
+    'sid=admin': { id: 'admin', name: 'Owner', email: 'owner@example.com', emailVerified: true },
     'sid=user': { id: 'user', name: 'Fan', email: 'fan@example.com' },
   };
   const calls = [];

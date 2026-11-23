@@ -7,7 +7,9 @@ import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { createApp } from '../dist/app.js';
 
-test('submitting request cards commits every card and attachment together', async () => {
+test('submitting request cards commits every card and attachment together', async t => {
+  let now = Date.parse('2027-05-01T14:59:59.999Z');
+  t.mock.method(Date, 'now', () => now);
   const dir = await mkdtemp(path.join(tmpdir(), 'daiko-batch-'));
   const url = `file:${path.join(dir, 'test.db')}`;
   await writeFile(path.join(dir, 'test.db'), '');
@@ -69,6 +71,15 @@ test('submitting request cards commits every card and attachment together', asyn
     assert.equal((await readdir(imageDir)).length, 1);
     const photo = await app.inject({ method: 'GET', url: `/api/requests/${items[0].id}/image`, headers: { cookie: 'fan' } });
     assert.deepEqual(photo.rawPayload, png);
+
+    // At midnight JST a draft from yesterday must not add rows or retain its upload.
+    const files = await readdir(imageDir);
+    now += 1;
+    const closed = await send([member, goods]);
+    assert.equal(closed.statusCode, 409);
+    assert.equal(closed.json().error, 'This event is no longer accepting requests.');
+    assert.equal(await prisma.request.count(), rows.length);
+    assert.deepEqual(await readdir(imageDir), files);
   } finally {
     await app.close();
     await prisma.$disconnect();

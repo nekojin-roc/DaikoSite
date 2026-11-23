@@ -20,6 +20,7 @@ function BrandLogo({className}: {className: string}) {
 type User = { id: string; name: string; email: string; role: string };
 type Event = { id: string; name: string; groupName: string; groupId: string | null; startsAt: string; imageUrl: string | null; requestCount: number; totalRequestCount: number };
 type RequestItem = { id: string; type: string; finishedAt?: string | null; memberName?: string | null; offeringName?: string | null; imageUrl?: string | null; amount: number | null; message: string; createdAt: string; user?: {name: string; email: string}; event?: Pick<Event, 'id' | 'name' | 'groupName' | 'groupId' | 'startsAt'> };
+type NewEvent = Pick<Event, 'name' | 'startsAt'> & { groupId: string; imageUrl: string };
 type View = 'events' | 'requests' | 'admin' | 'past' | 'groups' | 'settings';
 
 class ApiError extends Error {
@@ -40,6 +41,8 @@ const eventDate = (value: string) => date(value, {weekday: 'short', month: 'shor
 const time = (value: string) => `${new Date(value).toLocaleString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Tokyo'})} JST`;
 const submitted = (value: string) => new Date(value).toLocaleString(i18n.resolvedLanguage, {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'});
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'Something went wrong. Please try again.';
+
+const byEventDate = (a: Event, b: Event) => Date.parse(a.startsAt) - Date.parse(b.startsAt);
 
 function canEditRequest(request: RequestItem, today: number) {
   return !request.finishedAt && !!request.event && new Date(request.event.startsAt).getTime() >= today;
@@ -79,7 +82,7 @@ function App() {
   const activeEditId = myRequests.some(request => request.id === editingRequestId && canEditRequest(request, today)) ? editingRequestId : null;
   const eventListView = (view === 'events' && !selected) || (admin && ((view === 'admin' && !showCreate && !queueEvent) || (view === 'past' && !queueEvent)));
 
-  const loadEvents = async () => { const result = await api<{events: Event[]}>('/daiko-api/events'); setEvents([...result.events].sort((a,b) => +new Date(a.startsAt) - +new Date(b.startsAt))); };
+  const loadEvents = async () => { const result = await api<{events: Event[]}>('/daiko-api/events'); setEvents([...result.events].sort(byEventDate)); };
   const loadGroups = async () => { const result = await api<{groups: Group[]}>('/daiko-api/groups'); setGroups(result.groups); };
   const loadMyRequests = async () => { const result = await api<{requests: RequestItem[]}>('/daiko-api/my-requests'); setMyRequests(result.requests); };
   const initialize = async () => { const result = await api<{user: User | null}>('/daiko-api/session'); setUser(result.user); if (result.user) { const isAdmin = result.user.role?.toUpperCase() === 'ADMIN'; setView(isAdmin ? 'admin' : 'events'); await Promise.all([loadEvents(), loadGroups(), ...(isAdmin ? [] : [loadMyRequests()])]); } };
@@ -197,16 +200,35 @@ function App() {
       }
     } catch(e) { if (openQueueEventId.current === eventId) setError(errorText(e)); } finally { setFinishingId(null); }
   };
-  const deleteEvent = async (event: Event) => {
-    if (!window.confirm(t('Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.', {name: event.name, shownCount: queue.length}))) return;
+  const createEvent = async (values: NewEvent) => {
     setBusy(true);
     setError('');
     try {
-      await api<void>(`/daiko-api/events/${encodeURIComponent(event.id)}`, {method: 'DELETE'});
+      const created = await post<Event>('/daiko-api/events', values);
+      setEvents(current => [...current, created].sort(byEventDate));
+      setShowCreate(false);
+      setNotice('Event added successfully.');
+    } catch(e) { setError(errorText(e)); } finally { setBusy(false); }
+  };
+  const deleteEvent = async (event: Event) => {
+    if (busy || queueLoading || completedLoading || queueError || completedError || finishingId) return;
+    const expectedCount = new Set([...queue, ...completedQueue].map(item => item.id)).size;
+    if (!window.confirm(t('Delete {{name}} and all associated requests ({{total}} pending and completed in total)? This cannot be undone.', {name: event.name, total: expectedCount}))) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api<void>(`/daiko-api/events/${encodeURIComponent(event.id)}?expectedRequestCount=${expectedCount}`, {method: 'DELETE'});
       setEvents(current => current.filter(item => item.id !== event.id));
       if (openQueueEventId.current === event.id) closeQueue();
       setNotice('Event deleted successfully.');
-    } catch(e) { setError(errorText(e)); } finally { setBusy(false); }
+    } catch(e) {
+      if (openQueueEventId.current !== event.id) return;
+      setError(errorText(e));
+      if (e instanceof ApiError && e.status === 409) {
+        const version = queueSequence.current;
+        await Promise.all([loadActiveQueue(event.id, version), loadCompleted(event.id, version)]);
+      }
+    } finally { setBusy(false); }
   };
 
   if (loading) return <div className="loading"><span className="spinner"/> {t("Loading Daiko…")}</div>;
@@ -228,7 +250,7 @@ function App() {
         {error && <div className="alert error" role="alert">{t(error, {defaultValue: error})}<button aria-label={t("Dismiss")} onClick={() => setError('')}><X size={16}/></button></div>}
         {notice && <div className="alert success" role="status"><Check size={17}/>{t(notice, {defaultValue: notice})}<button aria-label={t("Dismiss")} onClick={() => setNotice('')}><X size={16}/></button></div>}
         {view === 'events' && !selected && <><div className="page-heading"><div><h1>{t("Find your next event")}</h1></div></div><div className="section-heading"><div><h2>{t("Events")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} onClick={() => {setError(''); setNotice(''); setSelected(event);}}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No events yet")} text={t("Events will appear here once they’ve been added.")}/>}</div></>}
-        {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={requests => submitRequests(selected, requests)}/>}
+        {view === 'events' && selected && <MemberRequestForm key={selected.id} event={selected} closed={new Date(selected.startsAt).getTime() < today} group={groups.find(group => group.id === selected.groupId)} busy={busy} onBack={() => setSelected(null)} onSubmit={requests => submitRequests(selected, requests)}/>}
         {view === 'requests' && <>
           <div className="page-heading"><div><h1>{t('My requests')}</h1></div><button className="button primary" onClick={() => navigate('events')}><Plus size={16}/> {t('New request')}</button></div>
           <div className="section-heading"><div><h2>{t('Request history')}</h2></div><span className="count">{t('totalCount', {count: myRequests.length})}</span></div>
@@ -249,10 +271,10 @@ function App() {
         </>}
         {admin && view === 'admin' && !showCreate && !queueEvent && <><div className="page-heading admin-event-heading"><div><h1>{t("Event management")}</h1></div><button className="button primary" onClick={() => setShowCreate(true)}><Plus size={16}/> {t("Add event")}</button></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{upcomingEvents.length ? upcomingEvents.map(event => <EventCard key={event.id} event={event} admin onClick={() => selectQueue(event)}/>) : <Empty icon={<CalendarDays size={22}/>} title={t("No upcoming events")} text={t("Add an event to start receiving requests.")}/>}</div></>}
         {admin && view === 'past' && !queueEvent && <><div className="page-heading"><div><h1>{t("Past events")}</h1></div></div><div className="section-heading"><div><h2>{t("Event history")}</h2></div></div><div className="event-list" role="region" aria-label={t("Events")} tabIndex={0}>{pastEvents.length ? pastEvents.map(event => <EventCard key={event.id} event={event} admin countTotal onClick={() => selectQueue(event)}/>) : <Empty icon={<History size={22}/>} title={t("No past events")} text={t("Past events will appear here.")}/>}</div></>}
-        {view === 'admin' && showCreate && <CreateEvent groups={groups} busy={busy} onBack={() => setShowCreate(false)} onSubmit={async values => {setBusy(true); setError(''); try {await post('/daiko-api/events', values); await loadEvents(); setShowCreate(false); setNotice('Event added successfully.');} catch(e) {setError(errorText(e));} finally {setBusy(false);}}}/>}
+        {admin && view === 'admin' && showCreate && <CreateEvent groups={groups} busy={busy} onBack={() => setShowCreate(false)} onSubmit={createEvent}/>}
         {admin && (view === 'admin' || view === 'past') && queueEvent && <>
           <button className="back" onClick={closeQueue}><ArrowLeft size={16}/> {view === 'past' ? t('Past events') : t('Upcoming events')}</button>
-          <div className="page-heading"><div><h1>{queueEvent.name}</h1></div><div className="queue-actions">{!queueLoading && !queueError && <span className="count">{t('requestCount', {count: queue.length})}</span>}<button type="button" className="button danger" onClick={() => deleteEvent(queueEvent)} disabled={busy || queueLoading || completedLoading || !!queueError || !!finishingId}><Trash2 size={16}/> {t('Delete event')}</button></div></div>
+          <div className="page-heading"><div><h1>{queueEvent.name}</h1></div><div className="queue-actions">{!queueLoading && !queueError && <span className="count">{t('requestCount', {count: queue.length})}</span>}<button type="button" className="button danger" onClick={() => deleteEvent(queueEvent)} disabled={busy || queueLoading || completedLoading || !!queueError || !!completedError || !!finishingId}><Trash2 size={16}/> {t('Delete event')}</button></div></div>
           <div className="section-heading"><div><h2>{t("Request queue")}</h2></div></div>
           {queueLoading ? <div className="loading-inline" role="status">{t("Loading queue…")}</div> : queueError ? <div className="alert error" role="alert"><span>{t('Could not load the request queue.')}</span><button type="button" className="text-button" onClick={() => void loadActiveQueue(queueEvent.id, queueSequence.current)}>{t('Retry')}</button></div> : <div className="request-list">{queue.length ? queue.map((request, index) => <RequestCard key={request.id} request={request} position={index + 1} onFinish={() => finishRequest(request.id)} finishing={finishingId === request.id} finishDisabled={busy || !!finishingId}/>) : <Empty icon={<ClipboardList size={22}/>} title={t("The queue is empty")} text={t("Requests for this event will appear here as they come in.")}/>}</div>}
           <section className="completed-requests" aria-labelledby="completed-requests-heading">
@@ -315,7 +337,7 @@ function EventCard({event, onClick, admin = false, countTotal = false}: {event: 
   const [broken, setBroken] = useState(false);
   return <button className="event-card" onClick={onClick}><div className="event-image">{event.imageUrl && !broken ? <img src={event.imageUrl} alt="" onError={() => setBroken(true)}/> : <div className="image-placeholder"><Sparkles size={23}/><span>DAIKO EVENT</span></div>}</div><div className="event-info"><div className="event-date"><CalendarDays size={14}/>{eventDate(event.startsAt)} <span>·</span> {time(event.startsAt)}</div><h3>{event.name}</h3><p>{event.groupName}</p>{admin && <span className="queue-count">{t('requestCount', {count: (countTotal ? event.totalRequestCount : event.requestCount) ?? 0})}</span>}</div><div className="event-action"><span>{admin ? t('View queue') : t('Make a request')}</span><ChevronRight size={18}/></div></button>;
 }
-function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSubmit: (values: {name: string; groupId: string; startsAt: string; imageUrl: string}) => void; busy: boolean; groups: Group[]}) {
+function CreateEvent({onBack, onSubmit, busy, groups}: {onBack: () => void; onSubmit: (values: NewEvent) => void; busy: boolean; groups: Group[]}) {
   const { t } = useTranslation();
  const [name, setName] = useState('');
  const [groupId, setGroupId] = useState('');

@@ -9,14 +9,15 @@ import { createApp } from '../dist/app.js';
 import { decodeRequestImage, InvalidRequestImage } from '../dist/request-images.js';
 
 const origin = 'http://localhost:5173';
-test('groups and custom requests protect images and preserve historical choices', async () => {
+test('groups and custom requests protect images and preserve historical choices', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2027-01-01T00:00:00Z'));
   const dir = await mkdtemp(path.join(tmpdir(), 'daiko-groups-'));
   const url = `file:${path.join(dir, 'test.db')}`;
   await writeFile(path.join(dir, 'test.db'), '');
   const migration = spawnSync(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url }, encoding: 'utf8' });
   assert.equal(migration.status, 0, migration.stderr);
   const prisma = new PrismaClient({ datasources: { db: { url } } });
-  const users = { admin: { id: 'a', name: 'Admin', email: 'admin@example.com' }, fan: { id: 'u', name: 'Fan', email: 'fan@example.com' }, other: { id: 'v', name: 'Other', email: 'other@example.com' } };
+  const users = { admin: { id: 'a', name: 'Admin', email: 'admin@example.com', emailVerified: true }, fan: { id: 'u', name: 'Fan', email: 'fan@example.com' }, other: { id: 'v', name: 'Other', email: 'other@example.com' } };
   const app = await createApp({ prisma, resolveIdentity: async cookie => users[cookie] ?? null, adminEmails: ['admin@example.com'], allowedOrigins: [origin], logger: false, requestImageDirectory: path.join(dir, 'images') });
   const call = (method, url, cookie, payload) => app.inject({ method, url, headers: { ...(cookie ? { cookie } : {}), ...(!['GET', 'HEAD'].includes(method) ? { origin } : {}) }, ...(payload !== undefined ? { payload } : {}) });
   try {
@@ -61,7 +62,11 @@ test('groups and custom requests protect images and preserve historical choices'
     assert.equal((await call('DELETE', `/api/events/${event.id}`, 'fan')).statusCode, 403);
     assert.equal((await call('DELETE', `/api/events/${event.id}`)).statusCode, 401);
     assert.equal((await app.inject({ method: 'DELETE', url: `/api/events/${event.id}`, headers: { cookie: 'admin', origin: 'https://other.example' } })).statusCode, 403);
-    assert.equal((await call('DELETE', `/api/events/${event.id}`, 'admin')).statusCode, 204);
+    const deletion = `/api/events/${event.id}?expectedRequestCount=`;
+    assert.equal((await call('DELETE', deletion + 'invalid', 'admin')).statusCode, 400);
+    assert.equal((await call('DELETE', deletion + '0', 'admin')).statusCode, 409);
+    assert.equal((await call('GET', `/api/requests/${result.id}/image`, 'fan')).statusCode, 200);
+    assert.equal((await call('DELETE', deletion + '1', 'admin')).statusCode, 204);
     assert.equal((await call('DELETE', `/api/events/${event.id}`, 'admin')).statusCode, 404);
     assert.equal((await call('GET', `/api/events/${event.id}/requests`, 'admin')).statusCode, 404);
     assert.equal((await call('GET', `/api/requests/${result.id}/image`, 'fan')).statusCode, 404);

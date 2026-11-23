@@ -8,7 +8,9 @@ import { PrismaClient } from '@prisma/client';
 import { createApp } from '../dist/app.js';
 
 const origin = 'http://localhost:5173';
-test('goods appear first and finishing a request preserves its history', async () => {
+test('goods appear first and finishing a request preserves its history', async t => {
+  let now = Date.parse('2020-05-01T12:00:00Z');
+  t.mock.method(Date, 'now', () => now);
   const dir = await mkdtemp(path.join(tmpdir(), 'daiko-queue-'));
   const db = path.join(dir, 'test.db');
   const url = `file:${db}`;
@@ -16,7 +18,7 @@ test('goods appear first and finishing a request preserves its history', async (
   const migration = spawnSync(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url }, encoding: 'utf8' });
   assert.equal(migration.status, 0, migration.stderr);
   const prisma = new PrismaClient({ datasources: { db: { url } } });
-  const users = { admin: { id: 'a', name: 'Admin', email: 'admin@example.com' }, fan: { id: 'u', name: 'Fan', email: 'fan@example.com' }, other: { id: 'v', name: 'Other', email: 'other@example.com' } };
+  const users = { admin: { id: 'a', name: 'Admin', email: 'admin@example.com', emailVerified: true }, fan: { id: 'u', name: 'Fan', email: 'fan@example.com' }, other: { id: 'v', name: 'Other', email: 'other@example.com' } };
   const app = await createApp({ prisma, resolveIdentity: async cookie => users[cookie] ?? null, adminEmails: ['admin@example.com'], allowedOrigins: [origin], logger: false });
   const call = (method, url, cookie, payload, requestOrigin = origin) => app.inject({ method, url, headers: { ...(cookie ? { cookie } : {}), ...(!['GET', 'HEAD'].includes(method) ? { origin: requestOrigin } : {}) }, ...(payload === undefined ? {} : { payload }) });
   try {
@@ -63,6 +65,10 @@ test('goods appear first and finishing a request preserves its history', async (
     const past = (await call('POST', '/api/events', 'admin', { name: 'Past', groupName: 'Group', startsAt: '2020-05-01T12:00:00Z' })).json();
     const pastUrl = `/api/events/${past.id}/requests`;
     const pastRequest = (await call('POST', pastUrl, 'fan', { type: 'GOODS', message: 'Earlier event' })).json();
+    now = Date.parse('2020-05-01T15:00:00Z'); // Midnight JST after the event.
+    assert.equal((await call('POST', pastUrl, 'fan', { type: 'GOODS', message: 'Too late' })).statusCode, 409);
+    assert.deepEqual((await call('GET', '/api/events', 'fan')).json().events.map(item => item.id), [event.id]);
+    assert.ok((await call('GET', '/api/my-requests', 'fan')).json().requests.some(item => item.id === pastRequest.id));
     assert.equal((await call('POST', `/api/requests/${pastRequest.id}/finish`, 'admin')).statusCode, 204);
     assert.deepEqual((await call('GET', `${pastUrl}/completed`, 'admin')).json().requests.map(r => r.id), [pastRequest.id]);
     const eventCounts = (await call('GET', '/api/events', 'admin')).json().events;

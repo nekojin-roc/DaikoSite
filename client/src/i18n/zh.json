@@ -1,7 +1,9 @@
 {
   "Request {{number}}": "请求 {{number}}",
   "Remove request {{number}}": "移除请求 {{number}}",
+  "Changes saved, but the list could not be refreshed.": "更改已保存，但列表刷新失败。",
   "Add another request": "再添加一个请求",
+  "Delete last request": "删除最后一个请求",
   "Images in one submission must total 5 MiB or less.": "每次提交的图片总大小不能超过 5 MiB。",
   "You can add up to {{count}} requests at a time.": "每次最多可以添加 {{count}} 个请求。",
   "Your requests have been submitted. You can find them in My requests.": "请求已提交，可在「我的请求」中查看。",
@@ -55,7 +57,7 @@
   "View queue": "查看队列",
   "Make a request": "提交请求",
   "Back to events": "返回活动列表",
-  "Tell us what you need": "告诉我们你的需求",
+  "Make your requests": "填写请求",
   "Request details": "请求详情",
   "Cheki": "拍立得",
   "Goods": "周边",
@@ -227,5 +229,7 @@
   "No completed requests yet": "暂无已完成的请求",
   "Finished requests for this event will appear here.": "此活动已完成的请求会显示在这里。",
   "Finished on {{date}}": "完成于 {{date}}",
-  "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "确定删除“{{name}}”吗？当前显示的请求数：{{shownCount}}。该活动的所有相关请求也将被永久删除，且无法撤销。"
+  "Delete {{name}} and all associated requests ({{total}} pending and completed in total)? This cannot be undone.": "确定删除“{{name}}”及其所有请求（待处理和已完成合计 {{total}} 个）吗？此操作无法撤销。",
+  "The request count changed. Review the queue before deleting this event.": "请求数量已变更。请在删除活动前重新查看队列。",
+  "This event is no longer accepting requests.": "此活动已停止接受请求。"
 }

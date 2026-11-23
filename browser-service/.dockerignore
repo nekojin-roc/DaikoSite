@@ -1,3 +1,7 @@
-node_modules
-.env
-tests
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!server.mjs
+!rules.mjs
+!importer.mjs

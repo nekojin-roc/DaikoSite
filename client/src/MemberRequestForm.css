@@ -35,10 +35,12 @@
 .request-draft-queue .panel > label:last-child {
   margin-bottom: 0;
 }
-.request-queue-actions {
+.request-queue-actions,
+.request-draft-actions {
   flex-wrap: wrap;
   gap: 8px;
 }
-.request-queue-actions > :first-child {
+.request-draft-actions {
+  display: flex;
   margin-inline-end: auto;
 }

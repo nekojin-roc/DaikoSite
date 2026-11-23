@@ -8,7 +8,7 @@ type RequestEvent = { id: string; name: string; groupName: string; groupId: stri
 type Group = { id: string; name: string; members: { id: string; name: string }[]; offerings: { id: string; name: string }[] };
 export type MemberRequestPayload = { memberId: string; offeringId: string; message: string; amount?: number | null; image?: RequestImage } | { type: 'GOODS'; message: string };
 
-type Props = { event: RequestEvent; group: Group | undefined; onBack: () => void; onSubmit: (requests: MemberRequestPayload[]) => Promise<void>; busy: boolean };
+type Props = { event: RequestEvent; closed: boolean; group: Group | undefined; onBack: () => void; onSubmit: (requests: MemberRequestPayload[]) => Promise<void>; busy: boolean };
 type Draft = {
   id: number;
   kind: 'MEMBER' | 'GOODS';
@@ -127,7 +127,7 @@ function RequestDraftCard({ draft, number, group, disabled, onChange, onRemove }
   </section>;
 }
 
-export default function MemberRequestForm({ event, group, onBack, onSubmit, busy }: Props) {
+export default function MemberRequestForm({ event, closed, group, onBack, onSubmit, busy }: Props) {
   const { t, i18n } = useTranslation();
   const [drafts, setDrafts] = useState(() => [newDraft(1)]);
   const [pending, setPending] = useState(false);
@@ -135,7 +135,8 @@ export default function MemberRequestForm({ event, group, onBack, onSubmit, busy
   const nextId = useRef(2);
   const submitting = useRef(false);
   const activeGroup = event.groupId === group?.id ? group : undefined;
-  const disabled = busy || pending;
+  const sending = busy || pending;
+  const disabled = sending || closed;
   const imageBytes = drafts.reduce((total, draft) => total + (draft.kind === 'MEMBER' ? draft.image?.size ?? 0 : 0), 0);
   const smallEnough = imageBytes <= MAX_REQUEST_IMAGE_BYTES;
   const ready = smallEnough && drafts.every(draft => isComplete(draft, activeGroup));
@@ -150,7 +151,7 @@ export default function MemberRequestForm({ event, group, onBack, onSubmit, busy
     setError('');
   }
   function removeDraft(id: number) {
-    setDrafts(current => current.filter(draft => draft.id !== id));
+    setDrafts(current => current.length > 1 ? current.filter(draft => draft.id !== id) : current);
     setError('');
   }
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -189,19 +190,23 @@ export default function MemberRequestForm({ event, group, onBack, onSubmit, busy
 
   const when = new Date(event.startsAt);
   return <>
-    <button className="back" onClick={onBack} disabled={disabled}><ArrowLeft size={16}/> {t('Back to events')}</button>
-    <div className="page-heading"><h1>{t('Tell us what you need')}</h1></div>
+    <button className="back" onClick={onBack} disabled={sending}><ArrowLeft size={16}/> {t('Back to events')}</button>
+    <div className="page-heading"><h1>{t('Make your requests')}</h1></div>
     <div className="form-layout">
       <form className="request-draft-queue" onSubmit={submit}>
+        {closed && <div className="alert error" role="alert">{t('This event is no longer accepting requests.')}</div>}
         {drafts.map((draft, index) => <RequestDraftCard key={draft.id} draft={draft} number={index + 1} group={activeGroup} disabled={disabled}
           onChange={changes => editDraft(draft.id, changes)} onRemove={drafts.length > 1 ? () => removeDraft(draft.id) : undefined}/>)}
         {drafts.length === MAX_CARDS && <p className="field-help" role="status">{t('You can add up to {{count}} requests at a time.', {count: MAX_CARDS})}</p>}
         {!smallEnough && <div className="alert error" role="alert">{t('Images in one submission must total 5 MiB or less.')}</div>}
         {error && <div className="alert error" role="alert">{t(error)}</div>}
         <div className="request-queue-actions">
-          <button type="button" className="button secondary" onClick={addDraft} disabled={disabled || drafts.length >= MAX_CARDS}><Plus size={16}/> {t('Add another request')}</button>
-          <button type="button" className="button secondary" onClick={onBack} disabled={disabled}>{t('Cancel')}</button>
-          <button className="button primary" disabled={!ready || disabled}>{disabled ? t('Submitting…') : t('submitRequestCount', {count: drafts.length})} <ArrowRight size={16}/></button>
+          <div className="request-draft-actions">
+            <button type="button" className="button secondary" onClick={addDraft} disabled={disabled || drafts.length >= MAX_CARDS}><Plus size={16} aria-hidden="true"/> {t('Add another request')}</button>
+            <button type="button" className="button danger" onClick={() => removeDraft(drafts[drafts.length - 1].id)} disabled={disabled || drafts.length <= 1}><Trash2 size={16} aria-hidden="true"/> {t('Delete last request')}</button>
+          </div>
+          <button type="button" className="button secondary" onClick={onBack} disabled={sending}>{t('Cancel')}</button>
+          <button className="button primary" disabled={!ready || disabled}>{sending ? t('Submitting…') : t('submitRequestCount', {count: drafts.length})} <ArrowRight size={16}/></button>
         </div>
       </form>
       <aside className="summary-card"><div className="summary-label">{t('SELECTED EVENT')}</div><div className="summary-icon"><CalendarDays size={20}/></div><h3>{event.name}</h3><p>{event.groupName}</p><div className="summary-date"><CalendarDays size={15}/>{when.toLocaleDateString(i18n.resolvedLanguage, {weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Tokyo'})}<br/><Clock3 size={15}/>{when.toLocaleTimeString(i18n.resolvedLanguage, {hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Tokyo'})} JST</div></aside>

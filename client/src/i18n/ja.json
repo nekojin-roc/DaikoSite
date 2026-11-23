@@ -1,7 +1,9 @@
 {
   "Request {{number}}": "リクエスト {{number}}",
   "Remove request {{number}}": "リクエスト {{number}} を削除",
+  "Changes saved, but the list could not be refreshed.": "変更は保存されましたが、一覧を更新できませんでした。",
   "Add another request": "リクエストを追加",
+  "Delete last request": "最後のリクエストを削除",
   "Images in one submission must total 5 MiB or less.": "一度に送信する画像の合計サイズは5 MiB以下にしてください。",
   "You can add up to {{count}} requests at a time.": "一度に追加できるリクエストは{{count}}件までです。",
   "Your requests have been submitted. You can find them in My requests.": "リクエストを送信しました。「マイリクエスト」で確認できます。",
@@ -55,7 +57,7 @@
   "View queue": "リクエストを見る",
   "Make a request": "リクエストする",
   "Back to events": "イベントに戻る",
-  "Tell us what you need": "リクエストを入力",
+  "Make your requests": "リクエストを作成",
   "Request details": "リクエスト詳細",
   "Cheki": "チェキ",
   "Goods": "グッズ",
@@ -227,5 +229,7 @@
   "No completed requests yet": "完了済みのリクエストはありません",
   "Finished requests for this event will appear here.": "このイベントの完了済みリクエストがここに表示されます。",
   "Finished on {{date}}": "完了日時：{{date}}",
-  "Delete {{name}}? Requests shown: {{shownCount}}. All associated requests will also be permanently deleted. This cannot be undone.": "「{{name}}」を削除しますか？表示中のリクエスト数：{{shownCount}}件。このイベントのすべてのリクエストも完全に削除されます。この操作は取り消せません。"
+  "Delete {{name}} and all associated requests ({{total}} pending and completed in total)? This cannot be undone.": "「{{name}}」と関連するすべてのリクエスト（未完了・完了合わせて{{total}}件）を削除しますか？この操作は取り消せません。",
+  "The request count changed. Review the queue before deleting this event.": "リクエスト数が変わりました。このイベントを削除する前に、一覧をもう一度確認してください。",
+  "This event is no longer accepting requests.": "このイベントのリクエスト受付は終了しました。"
 }

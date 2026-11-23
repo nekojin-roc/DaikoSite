@@ -16,12 +16,27 @@ export default function GroupManagement({ groups, onBack, onReload }: Props) {
   const [groupName, setGroupName] = useState('');
   const [editingGroup, setEditingGroup] = useState(false);
   const [editGroupName, setEditGroupName] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const busy = pending || refreshFailed;
   const [error, setError] = useState('');
   const selected = groups.find(group => group.id === selectedId);
 
+  const reload = async () => {
+    try {
+      await onReload();
+      setRefreshFailed(false);
+    } catch {
+      setRefreshFailed(true);
+    }
+  };
+  const retryReload = async () => {
+    setPending(true);
+    try { await reload(); } finally { setPending(false); }
+  };
   const mutate: Mutation = async (path, method, name) => {
-    setBusy(true);
+    if (busy) return false;
+    setPending(true);
     setError('');
     try {
       const response = await fetch(path, {
@@ -32,13 +47,14 @@ export default function GroupManagement({ groups, onBack, onReload }: Props) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.message || data.error || 'Unable to complete request');
       }
-      await onReload();
+      // A successful write must not be submitted again if refreshing the list fails.
+      await reload();
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       return false;
     } finally {
-      setBusy(false);
+      setPending(false);
     }
   };
   const addGroup = async (event: FormEvent) => {
@@ -57,8 +73,9 @@ export default function GroupManagement({ groups, onBack, onReload }: Props) {
   const back = () => { setSelectedId(null); setEditingGroup(false); setError(''); };
 
   return <>
-    <button type="button" className="back" onClick={selected ? back : onBack} disabled={busy}><ArrowLeft size={16}/> {t(selected ? 'Manage groups' : 'Settings')}</button>
+    <button type="button" className="back" onClick={selected ? back : onBack} disabled={pending}><ArrowLeft size={16}/> {t(selected ? 'Manage groups' : 'Settings')}</button>
     <div className="page-heading"><h1>{selected ? selected.name : t('Manage groups')}</h1>{!selected && !addingGroup && <button className="button primary" onClick={() => setAddingGroup(true)} disabled={busy}><Plus size={16}/> {t('Add group')}</button>}</div>
+    {refreshFailed && <div className="alert error" role="alert"><span>{t('Changes saved, but the list could not be refreshed.')}</span><button type="button" className="text-button" disabled={pending} onClick={retryReload}>{t('Retry')}</button></div>}
     {error && <div className="alert error" role="alert">{t(error, { defaultValue: error })}<button aria-label={t('Dismiss')} onClick={() => setError('')}><X size={16}/></button></div>}
     {!selected && <>
       {addingGroup && <form className="panel group-create" onSubmit={addGroup}>

@@ -12,7 +12,7 @@ The production site is `https://daiko.nekoj.in/`. Its existing Docker Compose pr
 - Administrators manage groups from Settings, where they can create groups, add members, and manage the daiko types shared by each group. Events are linked to a group. Each event queue lists goods requests first, then other requests, in submission order within each category. Finishing a request removes it from the active queue but keeps it in the user's request history and in the event's completed-requests section, including after the event becomes past. Member and daiko type names are saved with the request so subsequent edits do not change its history. Existing event groups are created automatically during migration; add members and daiko types to enable new member requests for them.
 - Paste a TicketDive (`https://ticketdive.com/event/…`) or LivePocket (`https://livepocket.jp/e/…`, including `t.livepocket.jp`) event URL in **Add an event** to fetch its title and main visual automatically. Review the preview, edit the title if needed, then supply the group and date/time before saving. A failed fetch leaves manual entry available.
 - Imported images are downloaded at their original resolution without recompression. TicketDive's Next.js thumbnail URL is unwrapped to its original image; LivePocket's direct event image is used. Files are stored in `DAIKO_EVENT_IMAGE_DIR` (default `./data/event-images`) and served to signed-in users. Identical image bytes share one stored file. Imports only populate the form; they do not create events until you select **Add event**.
-- The administrator is configured separately with `DAIKO_ADMIN_EMAILS`; a ParcelHub administrator is not automatically a Daiko administrator.
+- Daiko grants administrator access only when ParcelHub reports a verified email that is listed in `DAIKO_ADMIN_EMAILS`; a ParcelHub administrator is not automatically a Daiko administrator.
 - Settings are available to both users and administrators. Language supports English, Simplified Chinese, and Japanese; appearance offers Auto, Dark, Bright, and Pickles. Preferences are saved in the browser using ParcelHub's `parcelhub.language` cookie and `parcelhub.appearance` local storage key. Appearance and host-scoped cookies are separate between production Daiko and ParcelHub. Browser storage is also origin-specific on local development ports 5173 and 5174; the language cookie is shared on the same hostname. ParcelHub's French and German language selections fall back to English in Daiko without changing the saved cookie.
 - Administrators can delete an event after confirmation, which also deletes its associated requests. Event editing is not yet available. Request attachments support JPEG, PNG, WebP, and GIF images up to 5 MiB.
 
@@ -20,7 +20,7 @@ Importing requires a publicly accessible event page and image. Fetches are limit
 
 ## Local development
 
-Install dependencies with `npm ci` in this directory and in `client/`. Copy `.env.example` to `.env`, set `DAIKO_ADMIN_EMAILS` to the email of an existing local ParcelHub account, and configure any other settings as needed. With the default database path, create the file if needed using `test -f prisma/daiko.db || touch prisma/daiko.db`. Apply migrations with `npx prisma migrate deploy`, then start the API with `node --env-file=.env node_modules/tsx/dist/cli.mjs watch src/index.ts`. In a second terminal run `npm --prefix client run dev` and open http://localhost:5174/.
+Install dependencies with `npm ci` in this directory and in `client/`. Copy `.env.example` to `.env`, set `DAIKO_ADMIN_EMAILS` to the verified email of an existing local ParcelHub account, and configure any other settings as needed. With the default database path, create the file if needed using `test -f prisma/daiko.db || touch prisma/daiko.db`. Apply migrations with `npx prisma migrate deploy`, then start the API with `node --env-file=.env node_modules/tsx/dist/cli.mjs watch src/index.ts`. In a second terminal run `npm --prefix client run dev` and open http://localhost:5174/.
 
 Start the local ParcelHub service on port 3001 and add `http://localhost:5174` to its `BETTER_AUTH_TRUSTED_ORIGINS`, preserving any existing origins. The Vite proxy reads `PARCELHUB_URL` from Daiko's root `.env` so that sign-in and API session checks use the same ParcelHub instance. Production uses the same accounts with a separate browser session on `daiko.nekoj.in`.
 
@@ -40,13 +40,15 @@ The Daiko API checks both the ParcelHub session and a guarded ParcelHub endpoint
 
 ### Legacy instance backups and rollback
 
+The API image runs as UID/GID 1000. If the legacy instance is being upgraded from the old root image, stop its API and verify its backup first, then transfer ownership of **its own** volume (`daiko_daiko-data`) to 1000:1000 using the procedure in the [deployment notes](deploy/STAGING.md). Never substitute the production volume for the legacy one.
+
 With commands run on the host from `/root/Daiko`, stop the API before backing up its data volume so the snapshot includes a consistent SQLite state and all imported images. Both Compose configurations store images under `/app/data/event-images` in their existing persistent volume. The web container may remain running; requests fail temporarily while the API is stopped. Do not delete the volume.
 
 ```sh
 mkdir -p backups
 chmod 700 backups
 docker compose -f compose.homelab.yml stop api
-docker run --rm -v daiko_daiko-data:/source:ro -v "$PWD/backups:/backup" alpine:3.20 sh -c 'tar -czf /backup/daiko-$(date +%Y%m%d-%H%M%S).tar.gz -C /source .'
+docker run --rm -v daiko_daiko-data:/source:ro -v "$PWD/backups:/backup" alpine:3.24 sh -c 'umask 077; tar -czf /backup/daiko-$(date +%Y%m%d-%H%M%S).tar.gz -C /source .'
 docker compose -f compose.homelab.yml up -d api
 ```
 

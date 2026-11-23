@@ -30,7 +30,7 @@ test('owners can edit pending requests without moving or unlocking them', async 
   const users = {
     fan: user,
     other: { id: 'other', name: 'Other', email: 'other@example.com' },
-    admin: { id: 'admin', name: 'Admin', email: 'admin@example.com' },
+    admin: { id: 'admin', name: 'Admin', email: 'admin@example.com', emailVerified: true },
   };
   let clock = Date.parse('2027-04-15T15:45:00.000Z');
   t.mock.method(Date, 'now', () => clock);
@@ -85,7 +85,7 @@ test('owners can edit pending requests without moving or unlocking them', async 
     data: { name: 'Yesterday in Japan', groupName: group.name, startsAt: new Date('2027-04-15T14:59:59.999Z') },
   });
   const goods = await submit(event, { type: 'GOODS', message: 'Towel' });
-  const past = await submit(pastEvent, { type: 'GOODS', message: 'Previous day' });
+  const past = await prisma.request.create({ data: { eventId: pastEvent.id, type: 'GOODS', message: 'Previous day', userId: user.id, userName: user.name, userEmail: user.email } });
   const cheki = await submit(event, { type: 'CHEKI', message: 'Sign please', amount: 1 });
   const custom = await submit(event, {
     memberId: group.members[0].id, offeringId: group.offerings[0].id, amount: 2,
